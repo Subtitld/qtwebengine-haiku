@@ -1,0 +1,26 @@
+From 6d29bff9cb1c6bde0c88c64f9f613fd4e0ff81cb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 04:54:13 -0300
+Subject: [PATCH 24/24] Haiku: the inspector overlay's rollup run gives terser
+ a worker count
+
+---
+ .../src/scripts/build/build_inspector_overlay.py             | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/third_party/devtools-frontend/src/scripts/build/build_inspector_overlay.py b/src/3rdparty/chromium/third_party/devtools-frontend/src/scripts/build/build_inspector_overlay.py
+index ea82170..1a07173 100644
+--- a/src/3rdparty/chromium/third_party/devtools-frontend/src/scripts/build/build_inspector_overlay.py
++++ b/src/3rdparty/chromium/third_party/devtools-frontend/src/scripts/build/build_inspector_overlay.py
+@@ -56,7 +56,10 @@ def rollup(input_path, output_path, filename, max_size, rollup_plugin):
+         [devtools_paths.node_path(),
+          devtools_paths.rollup_path()] +
+         ['--format', 'iife', '-n', 'InspectorOverlay'] + ['--input', target] +
+-        ['--plugin', rollup_plugin, '--plugin', 'terser'],
++        # Node on Haiku lists no CPUs, which leaves terser with no workers:
++        # say how many there are.
++        ['--plugin', rollup_plugin, '--plugin',
++         'terser={maxWorkers: %d}' % (os.cpu_count() or 4)],
+         stdout=subprocess.PIPE,
+         stderr=subprocess.PIPE,
+         universal_newlines=True,

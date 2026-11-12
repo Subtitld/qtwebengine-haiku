@@ -1,0 +1,163 @@
+From 1db12c3e30d59ad0b8f72e137c456b545771f4bc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 22:31:41 -0300
+Subject: [PATCH 03/24] Haiku: PartitionAlloc, Perfetto and Abseil know the OS
+
+PartitionAlloc's own build_config.h gets PA_IS_HAIKU (counted as BSD and
+POSIX, like //build). Perfetto: no CLOCK_BOOTTIME or CLOCK_MONOTONIC_RAW,
+no sys/syscall.h, no dirent d_type (stat instead), and SO_PEERCRED takes
+struct ucred as on Linux. Abseil: thread id from find_thread().
+---
+ .../src/partition_alloc/build_config.h            | 15 +++++++++++++--
+ .../abseil-cpp/absl/base/internal/sysinfo.cc      |  8 ++++++++
+ .../perfetto/include/perfetto/base/thread_utils.h |  2 +-
+ .../perfetto/include/perfetto/base/time.h         |  4 ++--
+ .../third_party/perfetto/src/base/file_utils.cc   | 13 ++++++++++++-
+ .../third_party/perfetto/src/base/unix_socket.cc  |  2 +-
+ 6 files changed, 37 insertions(+), 7 deletions(-)
+
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/build_config.h b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/build_config.h
+index 12f5648..826a71b 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/build_config.h
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/build_config.h
+@@ -106,6 +106,8 @@
+ #define PA_IS_AIX
+ #elif defined(__asmjs__) || defined(__wasm__)
+ #define PA_IS_ASMJS
++#elif defined(__HAIKU__)
++#define PA_IS_HAIKU
+ #endif
+ 
+ // NOTE: Adding a new port? Please follow
+@@ -115,7 +117,9 @@
+ #define PA_IS_APPLE
+ #endif
+ 
+-#if defined(PA_IS_FREEBSD) || defined(PA_IS_NETBSD) || defined(PA_IS_OPENBSD)
++// Haiku follows the BSD paths, as in //build/build_config.h.
++#if defined(PA_IS_FREEBSD) || defined(PA_IS_NETBSD) || defined(PA_IS_OPENBSD) || \
++    defined(PA_IS_HAIKU)
+ #define PA_IS_BSD
+ #endif
+ 
+@@ -123,7 +127,7 @@
+     defined(PA_IS_IOS) || defined(PA_IS_LINUX) || defined(PA_IS_CHROMEOS) ||  \
+     defined(PA_IS_MAC) || defined(PA_IS_NACL) || defined(PA_IS_NETBSD) ||     \
+     defined(PA_IS_OPENBSD) || defined(PA_IS_QNX) || defined(PA_IS_SOLARIS) || \
+-    PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_CHROMEOS)
++    PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_CHROMEOS) || defined(PA_IS_HAIKU)
+ #define PA_IS_POSIX
+ #endif
+ 
+@@ -421,6 +425,13 @@
+ #endif
+ #undef PA_IS_FREEBSD
+ 
++#if defined(PA_IS_HAIKU)
++#define PA_BUILDFLAG_INTERNAL_IS_HAIKU() (1)
++#else
++#define PA_BUILDFLAG_INTERNAL_IS_HAIKU() (0)
++#endif
++#undef PA_IS_HAIKU
++
+ #if defined(PA_IS_FUCHSIA)
+ #define PA_BUILDFLAG_INTERNAL_IS_FUCHSIA() (1)
+ #else
+diff --git a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/sysinfo.cc b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/sysinfo.cc
+index a1e8bbd..ba254d2 100644
+--- a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/sysinfo.cc
++++ b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/sysinfo.cc
+@@ -14,6 +14,10 @@
+ 
+ #include "absl/base/internal/sysinfo.h"
+ 
++#if defined(__HAIKU__)
++#include <OS.h>
++#endif
++
+ #include "absl/base/attributes.h"
+ 
+ #ifdef _WIN32
+@@ -477,6 +481,10 @@ pid_t GetTID() {
+   return getthrid();
+ }
+ 
++#elif defined(__HAIKU__)
++
++pid_t GetTID() { return find_thread(nullptr); }
++
+ #elif defined(__Fuchsia__)
+ 
+ pid_t GetTID() {
+diff --git a/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/thread_utils.h b/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/thread_utils.h
+index 7cfab2e..e5aa820 100644
+--- a/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/thread_utils.h
++++ b/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/thread_utils.h
+@@ -32,7 +32,7 @@ __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
+ #include <sys/types.h>
+ #include <unistd.h>
+-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
++#elif (PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) && !defined(__HAIKU__)) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+ #include <sys/syscall.h>
+ #include <sys/types.h>
+diff --git a/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/time.h b/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/time.h
+index 8f58ad2..dd0c6b7 100644
+--- a/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/time.h
++++ b/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/time.h
+@@ -227,7 +227,7 @@ inline TimeNanos GetTimeInternalNs(clockid_t clk_id) {
+ // Return ns from boot. Conversely to GetWallTimeNs, this clock counts also time
+ // during suspend (when supported).
+ inline TimeNanos GetBootTimeNs() {
+-#if defined(__FreeBSD__)
++#if defined(__FreeBSD__) || defined(__HAIKU__)
+   return GetTimeInternalNs(kWallTimeClockSource);
+ #else
+   // Determine if CLOCK_BOOTTIME is available on the first call.
+@@ -245,7 +245,7 @@ inline TimeNanos GetWallTimeNs() {
+ }
+ 
+ inline TimeNanos GetWallTimeRawNs() {
+-#if defined(__OpenBSD__)
++#if defined(__OpenBSD__) || defined(__HAIKU__)
+   return GetTimeInternalNs(CLOCK_MONOTONIC);
+ #elif defined(__FreeBSD__)
+   return GetTimeInternalNs(CLOCK_MONOTONIC_FAST);
+diff --git a/src/3rdparty/chromium/third_party/perfetto/src/base/file_utils.cc b/src/3rdparty/chromium/third_party/perfetto/src/base/file_utils.cc
+index f9be6b6..236813b 100644
+--- a/src/3rdparty/chromium/third_party/perfetto/src/base/file_utils.cc
++++ b/src/3rdparty/chromium/third_party/perfetto/src/base/file_utils.cc
+@@ -339,7 +339,18 @@ base::Status ListFilesRecursive(const std::string& dir_path,
+           strcmp(dirent->d_name, "..") == 0) {
+         continue;
+       }
+-#if PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
++#if defined(__HAIKU__)
++      // Haiku's dirent has no d_type.
++      struct stat dirstat;
++      const std::string full_path = cur_dir + dirent->d_name;
++      PERFETTO_CHECK(stat(full_path.c_str(), &dirstat) == 0);
++      if (S_ISDIR(dirstat.st_mode)) {
++        dir_queue.push_back(full_path + '/');
++      } else if (S_ISREG(dirstat.st_mode)) {
++        PERFETTO_CHECK(full_path.length() > root_dir_path.length());
++        output.push_back(full_path.substr(root_dir_path.length()));
++      }
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
+       struct stat* dirstat;
+       const std::string full_path = cur_dir + dirent->d_name;
+       PERFETTO_CHECK(stat(full_path.c_str(), dirstat) == 0);
+diff --git a/src/3rdparty/chromium/third_party/perfetto/src/base/unix_socket.cc b/src/3rdparty/chromium/third_party/perfetto/src/base/unix_socket.cc
+index 8ea5851..fe0bb98 100644
+--- a/src/3rdparty/chromium/third_party/perfetto/src/base/unix_socket.cc
++++ b/src/3rdparty/chromium/third_party/perfetto/src/base/unix_socket.cc
+@@ -978,7 +978,7 @@ void UnixSocket::ReadPeerCredentialsPosix() {
+   // There is no pid when obtaining peer credentials for QNX
+ #elif !defined(__FreeBSD__) && PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+-#if PERFETTO_BUILDFLAG(PERFETTO_OS_BSD)
++#if PERFETTO_BUILDFLAG(PERFETTO_OS_BSD) && !defined(__HAIKU__)
+   struct sockpeercred user_cred;
+ #else
+   struct ucred user_cred;

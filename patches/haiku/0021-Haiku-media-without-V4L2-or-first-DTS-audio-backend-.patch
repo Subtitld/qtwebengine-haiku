@@ -1,0 +1,125 @@
+From 2d66b8bb69dd460ad0456d0526ff34226596149a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 04:05:37 -0300
+Subject: [PATCH 21/24] Haiku: media without V4L2 or first-DTS, audio backend
+ default
+
+No camera on Haiku: the V4L2 sources stay out and the platform factory
+is a fake one with no devices. Haiku's system FFmpeg does not export
+Chromium's av_stream_get_first_dts, so the demuxer treats it as unknown.
+The audio backend parameter defaults to auto, as on FreeBSD.
+---
+ src/3rdparty/chromium/media/base/media_switches.cc    |  2 +-
+ src/3rdparty/chromium/media/capture/BUILD.gn          |  5 +++--
+ .../video/create_video_capture_device_factory.cc      | 11 +++++++++--
+ .../video_capture_buffer_tracker_factory_impl.cc      |  4 ++--
+ src/3rdparty/chromium/media/filters/ffmpeg_demuxer.cc |  9 +++++++++
+ 5 files changed, 24 insertions(+), 7 deletions(-)
+
+diff --git a/src/3rdparty/chromium/media/base/media_switches.cc b/src/3rdparty/chromium/media/base/media_switches.cc
+index c29c7d0..41c01bb 100644
+--- a/src/3rdparty/chromium/media/base/media_switches.cc
++++ b/src/3rdparty/chromium/media/base/media_switches.cc
+@@ -401,7 +401,7 @@ const base::FeatureParam<AudioBackend>
+         &kAudioBackend, "audio-backend",
+ #if BUILDFLAG(IS_OPENBSD)
+         AudioBackend::kSndio,
+-#elif BUILDFLAG(IS_FREEBSD)
++#elif BUILDFLAG(IS_FREEBSD) || BUILDFLAG(IS_HAIKU)
+         AudioBackend::kAuto,
+ #endif
+         &kAudioBackendOptions};
+diff --git a/src/3rdparty/chromium/media/capture/BUILD.gn b/src/3rdparty/chromium/media/capture/BUILD.gn
+index 995b1b7..3ede64d 100644
+--- a/src/3rdparty/chromium/media/capture/BUILD.gn
++++ b/src/3rdparty/chromium/media/capture/BUILD.gn
+@@ -239,7 +239,8 @@ jumbo_component("capture_lib") {
+     public_deps += [ "video/win" ]
+   }
+ 
+-  if (is_linux || is_chromeos) {
++  # Haiku has no V4L2: it gets no camera (see create_video_capture_device_factory.cc).
++  if ((is_linux || is_chromeos) && !is_haiku) {
+     sources += [
+       "video/linux/scoped_v4l2_device_fd.cc",
+       "video/linux/scoped_v4l2_device_fd.h",
+@@ -266,7 +267,7 @@ jumbo_component("capture_lib") {
+     deps += [ "//gpu/command_buffer/client" ]
+   }
+ 
+-  if (is_linux) {
++  if (is_linux && !is_haiku) {
+     sources += [
+       "video/linux/v4l2_capture_delegate_gpu_helper.cc",
+       "video/linux/v4l2_capture_delegate_gpu_helper.h",
+diff --git a/src/3rdparty/chromium/media/capture/video/create_video_capture_device_factory.cc b/src/3rdparty/chromium/media/capture/video/create_video_capture_device_factory.cc
+index 39c59cb..69987fc 100644
+--- a/src/3rdparty/chromium/media/capture/video/create_video_capture_device_factory.cc
++++ b/src/3rdparty/chromium/media/capture/video/create_video_capture_device_factory.cc
+@@ -13,7 +13,9 @@
+ #include "media/capture/video/fake_video_capture_device_factory.h"
+ #include "media/capture/video/file_video_capture_device_factory.h"
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++// No camera support on Haiku.
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_BSD)
+ #include "media/capture/video/linux/video_capture_device_factory_linux.h"
+ #elif BUILDFLAG(IS_CHROMEOS_ASH)
+ #include "media/capture/video/chromeos/public/cros_features.h"
+@@ -56,7 +58,12 @@ CreateFakeVideoCaptureDeviceFactory() {
+ std::unique_ptr<VideoCaptureDeviceFactory>
+ CreatePlatformSpecificVideoCaptureDeviceFactory(
+     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++  // A fake factory with no devices: pages see no camera.
++  auto factory = std::make_unique<FakeVideoCaptureDeviceFactory>();
++  factory->SetToCustomDevicesConfig({});
++  return std::move(factory);
++#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_BSD)
+   return std::make_unique<VideoCaptureDeviceFactoryLinux>(ui_task_runner);
+ #elif BUILDFLAG(IS_CHROMEOS_ASH)
+   if (base::SysInfo::IsRunningOnChromeOS())
+diff --git a/src/3rdparty/chromium/media/capture/video/video_capture_buffer_tracker_factory_impl.cc b/src/3rdparty/chromium/media/capture/video/video_capture_buffer_tracker_factory_impl.cc
+index a9b1d8c..b84af69 100644
+--- a/src/3rdparty/chromium/media/capture/video/video_capture_buffer_tracker_factory_impl.cc
++++ b/src/3rdparty/chromium/media/capture/video/video_capture_buffer_tracker_factory_impl.cc
+@@ -14,7 +14,7 @@
+ #include "media/capture/video/chromeos/gpu_memory_buffer_tracker_cros.h"
+ #elif BUILDFLAG(IS_APPLE)
+ #include "media/capture/video/apple/gpu_memory_buffer_tracker_apple.h"
+-#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_BSD)
++#elif (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_BSD)) && !BUILDFLAG(IS_HAIKU)
+ #include "media/capture/video/linux/v4l2_gpu_memory_buffer_tracker.h"
+ #elif BUILDFLAG(IS_WIN)
+ #include "media/capture/video/win/gpu_memory_buffer_tracker_win.h"
+@@ -42,7 +42,7 @@ VideoCaptureBufferTrackerFactoryImpl::CreateTracker(
+       return std::make_unique<GpuMemoryBufferTrackerCros>();
+ #elif BUILDFLAG(IS_APPLE)
+       return std::make_unique<GpuMemoryBufferTrackerApple>();
+-#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_BSD)
++#elif (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_BSD)) && !BUILDFLAG(IS_HAIKU)
+       return std::make_unique<V4L2GpuMemoryBufferTracker>();
+ #elif BUILDFLAG(IS_WIN)
+       if (!dxgi_device_manager_) {
+diff --git a/src/3rdparty/chromium/media/filters/ffmpeg_demuxer.cc b/src/3rdparty/chromium/media/filters/ffmpeg_demuxer.cc
+index 90fb46e..ea79444 100644
+--- a/src/3rdparty/chromium/media/filters/ffmpeg_demuxer.cc
++++ b/src/3rdparty/chromium/media/filters/ffmpeg_demuxer.cc
+@@ -65,6 +65,15 @@ namespace {
+ 
+ constexpr int64_t kInvalidPTSMarker = static_cast<int64_t>(0x8000000000000000);
+ 
++#if BUILDFLAG(IS_HAIKU)
++// Chromium's FFmpeg exports the first DTS of a stream; Haiku's system FFmpeg
++// does not, and keeps it in private data. Report it as unknown, which the
++// callers below already handle (start times then come from PTS alone).
++int64_t av_stream_get_first_dts(const AVStream*) {
++  return kInvalidPTSMarker;
++}
++#endif
++
+ void SetAVStreamDiscard(AVStream* stream, AVDiscard discard) {
+   DCHECK(stream);
+   stream->discard = discard;

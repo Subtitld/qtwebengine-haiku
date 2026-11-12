@@ -1,0 +1,67 @@
+From 35295c94bd823e85bdcb8f12ece2479d513a6108 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 02:46:00 -0300
+Subject: [PATCH 16/24] Haiku: mojom is_bsd/is_haiku features, no USB service
+
+Mojom enables is_bsd for Haiku so generated bindings match the C++ side,
+which treats Haiku as BSD. The device service has no USB backend on
+Haiku: UsbService::Create() returns null.
+---
+ src/3rdparty/chromium/mojo/public/tools/bindings/mojom.gni | 6 ++++++
+ src/3rdparty/chromium/services/device/usb/BUILD.gn         | 2 +-
+ src/3rdparty/chromium/services/device/usb/usb_service.cc   | 5 ++++-
+ 3 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/src/3rdparty/chromium/mojo/public/tools/bindings/mojom.gni b/src/3rdparty/chromium/mojo/public/tools/bindings/mojom.gni
+index 27d84bb..69cffdf 100644
+--- a/src/3rdparty/chromium/mojo/public/tools/bindings/mojom.gni
++++ b/src/3rdparty/chromium/mojo/public/tools/bindings/mojom.gni
+@@ -797,6 +797,12 @@ template("mojom") {
+       enabled_features += [ "is_bsd" ]
+     }
+ 
++    # Haiku follows the BSD paths, as in //build/config/BUILDCONFIG.gn.
++    if (is_haiku) {
++      enabled_features += [ "is_haiku" ]
++      enabled_features += [ "is_bsd" ]
++    }
++
+     action_outputs = []
+     foreach(base_path, output_file_base_paths) {
+       filename = get_path_info(base_path, "file")
+diff --git a/src/3rdparty/chromium/services/device/usb/BUILD.gn b/src/3rdparty/chromium/services/device/usb/BUILD.gn
+index b46a286..3e67e8c 100644
+--- a/src/3rdparty/chromium/services/device/usb/BUILD.gn
++++ b/src/3rdparty/chromium/services/device/usb/BUILD.gn
+@@ -113,7 +113,7 @@ static_library("usb") {
+     deps += [ "//third_party/libusb" ]
+   }
+ 
+-  if (is_freebsd) {
++  if (is_freebsd || is_haiku) {
+     sources += [
+       "usb_service_fake.cc",
+       "usb_service_fake.h",
+diff --git a/src/3rdparty/chromium/services/device/usb/usb_service.cc b/src/3rdparty/chromium/services/device/usb/usb_service.cc
+index 3dd8293..f366c54 100644
+--- a/src/3rdparty/chromium/services/device/usb/usb_service.cc
++++ b/src/3rdparty/chromium/services/device/usb/usb_service.cc
+@@ -29,7 +29,7 @@
+ #include "services/device/usb/usb_service_win.h"
+ #elif BUILDFLAG(IS_OPENBSD)
+ #include "services/device/usb/usb_service_impl.h"
+-#elif BUILDFLAG(IS_FREEBSD)
++#elif BUILDFLAG(IS_FREEBSD) || BUILDFLAG(IS_HAIKU)
+ #include "services/device/usb/usb_service_fake.h"
+ #endif
+ 
+@@ -59,6 +59,9 @@ std::unique_ptr<UsbService> UsbService::Create() {
+   return base::WrapUnique(new UsbServiceWin());
+ #elif BUILDFLAG(IS_MAC)
+   return base::WrapUnique(new UsbServiceImpl());
++#elif BUILDFLAG(IS_HAIKU)
++  // No USB access from the browser on Haiku.
++  return nullptr;
+ #elif BUILDFLAG(IS_BSD)
+   return base::WrapUnique(new UsbServiceImpl());
+ #else

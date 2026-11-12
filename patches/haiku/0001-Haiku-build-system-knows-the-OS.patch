@@ -1,0 +1,255 @@
+From 4d51301e152f7b4ad68a3b762252d2918f041177 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 21:39:21 -0300
+Subject: [PATCH 01/24] Haiku: build system knows the OS
+
+Qt's CMake takes Haiku where FreeBSD's patches added FreeBSD, with GCC
+as its compiler; GN gets current_os "haiku", is_haiku, and Haiku counts
+as is_linux and is_bsd so it follows the BSD paths; build_config.h gets
+OS_HAIKU / IS_HAIKU (and IS_BSD, IS_POSIX). The host toolchain's
+FreeBSD placeholders are emptied.
+---
+ cmake/Functions.cmake                            |  2 +-
+ cmake/QtToolchainHelpers.cmake                   |  8 +++++---
+ configure.cmake                                  |  3 ++-
+ src/3rdparty/chromium/build/build_config.h       | 16 +++++++++++++---
+ .../chromium/build/config/BUILDCONFIG.gn         | 15 ++++++++++-----
+ src/core/CMakeLists.txt                          | 10 +++++-----
+ src/host/BUILD.toolchain.gn.in                   |  6 +++---
+ 7 files changed, 39 insertions(+), 21 deletions(-)
+
+diff --git a/cmake/Functions.cmake b/cmake/Functions.cmake
+index d6caf3a..392bc52 100644
+--- a/cmake/Functions.cmake
++++ b/cmake/Functions.cmake
+@@ -143,7 +143,7 @@ function(add_linker_options target buildDir completeStatic)
+     set(libs_rsp "${buildDir}/${ninjaTarget}_libs.rsp")
+     set(ldir_rsp "${buildDir}/${ninjaTarget}_ldir.rsp")
+     set_target_properties(${cmakeTarget} PROPERTIES STATIC_LIBRARY_OPTIONS "@${objects_rsp}")
+-    if(LINUX OR ANDROID OR FREEBSD)
++    if(LINUX OR ANDROID OR FREEBSD OR HAIKU)
+          get_gn_arch(cpu ${TEST_architecture_arch})
+          if(CMAKE_CROSSCOMPILING AND cpu STREQUAL "arm" AND ${config} STREQUAL "Debug")
+              target_link_options(${cmakeTarget} PRIVATE "LINKER:--long-plt")
+diff --git a/cmake/QtToolchainHelpers.cmake b/cmake/QtToolchainHelpers.cmake
+index 0e0ce60..3fc744a 100644
+--- a/cmake/QtToolchainHelpers.cmake
++++ b/cmake/QtToolchainHelpers.cmake
+@@ -97,6 +97,8 @@ function(get_gn_os result)
+         set(${result} "ios" PARENT_SCOPE)
+     elseif(FREEBSD)
+         set(${result} "freebsd" PARENT_SCOPE)
++    elseif(HAIKU)
++        set(${result} "haiku" PARENT_SCOPE)
+     else()
+         message(DEBUG "Unrecognized OS")
+     endif()
+@@ -420,7 +422,7 @@ macro(append_compiler_linker_sdk_setup)
+                 use_libcxx=true
+             )
+         endif()
+-        if(DEFINED QT_FEATURE_stdlib_libcpp AND (LINUX OR FREEBSD))
++        if(DEFINED QT_FEATURE_stdlib_libcpp AND (LINUX OR FREEBSD OR HAIKU))
+             extend_gn_list(gnArgArg ARGS use_libcxx
+                 CONDITION QT_FEATURE_stdlib_libcpp
+             )
+@@ -461,7 +463,7 @@ macro(append_compiler_linker_sdk_setup)
+         )
+     endif()
+     get_gn_arch(cpu ${TEST_architecture_arch})
+-    if((LINUX OR FREEBSD) AND CMAKE_CROSSCOMPILING AND cpu STREQUAL "arm")
++    if((LINUX OR FREEBSD OR HAIKU) AND CMAKE_CROSSCOMPILING AND cpu STREQUAL "arm")
+ 
+         extend_gn_list_cflag(gnArgArg
+             ARG arm_tune
+@@ -570,7 +572,7 @@ macro(append_toolchain_setup)
+         endif()
+         unset(host_cpu)
+         unset(target_cpu)
+-    elseif(LINUX OR FREEBSD)
++    elseif(LINUX OR FREEBSD OR HAIKU)
+         get_gn_arch(cpu ${TEST_architecture_arch})
+         list(APPEND gnArgArg
+             custom_toolchain="${buildDir}/target_toolchain:target"
+diff --git a/configure.cmake b/configure.cmake
+index 8dc75a3..04d3d97 100644
+--- a/configure.cmake
++++ b/configure.cmake
+@@ -304,7 +304,7 @@ unset(targets_to_check)
+ 
+ qt_webengine_configure_check("supported-platform"
+     MODULES QtWebEngine
+-    CONDITION LINUX OR WIN32 OR MACOS OR FREEBSD
++    CONDITION LINUX OR WIN32 OR MACOS OR FREEBSD OR HAIKU
+     MESSAGE "Build can be done only on Linux, Windows or macOS."
+ )
+ qt_webengine_configure_check("supported-platform"
+@@ -421,6 +421,7 @@ qt_webengine_configure_check("compiler"
+         (LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR
+         (FREEBSD AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR
+         (FREEBSD AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang") OR
++        (HAIKU AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR
+         (MACOS AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+     MESSAGE
+         "${CMAKE_CXX_COMPILER_ID} compiler is not supported."
+diff --git a/src/3rdparty/chromium/build/build_config.h b/src/3rdparty/chromium/build/build_config.h
+index 8d4895b..4be494c 100644
+--- a/src/3rdparty/chromium/build/build_config.h
++++ b/src/3rdparty/chromium/build/build_config.h
+@@ -115,6 +115,8 @@
+ #define OS_ASMJS 1
+ #elif defined(__MVS__)
+ #define OS_ZOS 1
++#elif defined(__HAIKU__)
++#define OS_HAIKU 1
+ #else
+ #error Please add support for your platform in build/build_config.h
+ #endif
+@@ -126,8 +128,10 @@
+ #endif
+ 
+ // For access to standard BSD features, use OS_BSD instead of a
+-// more specific macro.
+-#if defined(OS_FREEBSD) || defined(OS_NETBSD) || defined(OS_OPENBSD)
++// more specific macro. Haiku counts as one: the BSD exceptions to the
++// Linux code are the ones it needs, OS_HAIKU marks where it differs.
++#if defined(OS_FREEBSD) || defined(OS_NETBSD) || defined(OS_OPENBSD) || \
++    defined(OS_HAIKU)
+ #define OS_BSD 1
+ #endif
+ 
+@@ -137,7 +141,7 @@
+     defined(OS_FREEBSD) || defined(OS_IOS) || defined(OS_LINUX) ||  \
+     defined(OS_CHROMEOS) || defined(OS_MAC) || defined(OS_NACL) ||  \
+     defined(OS_NETBSD) || defined(OS_OPENBSD) || defined(OS_QNX) || \
+-    defined(OS_SOLARIS) || defined(OS_ZOS)
++    defined(OS_SOLARIS) || defined(OS_ZOS) || defined(OS_HAIKU)
+ #define OS_POSIX 1
+ #endif
+ 
+@@ -190,6 +194,12 @@
+ #define BUILDFLAG_INTERNAL_IS_FUCHSIA() (0)
+ #endif
+ 
++#if defined(OS_HAIKU)
++#define BUILDFLAG_INTERNAL_IS_HAIKU() (1)
++#else
++#define BUILDFLAG_INTERNAL_IS_HAIKU() (0)
++#endif
++
+ #if defined(OS_IOS)
+ #define BUILDFLAG_INTERNAL_IS_IOS() (1)
+ #else
+diff --git a/src/3rdparty/chromium/build/config/BUILDCONFIG.gn b/src/3rdparty/chromium/build/config/BUILDCONFIG.gn
+index 633dbdf..640d620 100644
+--- a/src/3rdparty/chromium/build/config/BUILDCONFIG.gn
++++ b/src/3rdparty/chromium/build/config/BUILDCONFIG.gn
+@@ -136,12 +136,12 @@ declare_args() {
+   is_official_build = false
+ 
+   # Set to true when compiling with the Clang compiler.
+-  is_clang = current_os != "linux" || current_os == "openbsd" ||
++  is_clang = current_os != "haiku" && (current_os != "linux" || current_os == "openbsd" ||
+              current_os == "freebsd" ||
+              (current_cpu != "s390x" && current_cpu != "s390" &&
+               current_cpu != "ppc64" && current_cpu != "ppc" &&
+               current_cpu != "mips" && current_cpu != "mips64" &&
+-              current_cpu != "riscv64")
++              current_cpu != "riscv64"))
+ 
+   # Helpers set from qt
+   is_mingw = false
+@@ -298,7 +298,8 @@ if (target_os == "android") {
+   _default_toolchain = "//build/toolchain/aix:$target_cpu"
+ } else if (target_os == "zos") {
+   _default_toolchain = "//build/toolchain/zos:$target_cpu"
+-} else if (target_os == "openbsd" || target_os == "freebsd") {
++} else if (target_os == "openbsd" || target_os == "freebsd" ||
++           target_os == "haiku") {
+   _default_toolchain = host_toolchain
+ } else {
+   assert(false, "Unsupported target_os: $target_os")
+@@ -334,11 +335,15 @@ is_android = current_os == "android"
+ is_chromeos = current_os == "chromeos"
+ is_fuchsia = current_os == "fuchsia"
+ is_ios = current_os == "ios"
++# Haiku takes the Linux paths, and the BSD exceptions to them, unless a
++# file asks for is_haiku.
+ is_linux = current_os == "linux" || current_os == "openbsd" ||
+-           current_os == "freebsd"
++           current_os == "freebsd" || current_os == "haiku"
+ is_openbsd = current_os == "openbsd"
+ is_freebsd = current_os == "freebsd"
+-is_bsd = current_os == "openbsd" || current_os == "freebsd"
++is_bsd = current_os == "openbsd" || current_os == "freebsd" ||
++         current_os == "haiku"
++is_haiku = current_os == "haiku"
+ is_mac = current_os == "mac"
+ is_nacl = current_os == "nacl"
+ is_watchos = current_os == "watchos"
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 8e2786d..143ba52 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -21,7 +21,7 @@ add_subdirectory(tools/qwebengine_convert_dict)
+ #   TOOLCHAIN SETUP
+ ##
+ 
+-if(LINUX OR WIN32 OR FREEBSD)
++if(LINUX OR WIN32 OR FREEBSD OR HAIKU)
+     setup_toolchains()
+ endif()
+ 
+@@ -213,7 +213,7 @@ foreach(arch ${archs})
+                 accessibility_activation_observer.cpp accessibility_activation_observer.h
+         )
+ 
+-        extend_gn_target(${buildGn} CONDITION LINUX OR FREEBSD
++        extend_gn_target(${buildGn} CONDITION LINUX OR FREEBSD OR HAIKU
+             SOURCES
+                 ozone/gl_ozone_qt.cpp ozone/gl_ozone_qt.h
+                 ozone/ozone_util_qt.cpp ozone/ozone_util_qt.h
+@@ -221,7 +221,7 @@ foreach(arch ${archs})
+                 ozone/surface_factory_qt.cpp ozone/surface_factory_qt.h
+         )
+ 
+-        extend_gn_target(${buildGn} CONDITION (LINUX OR FREEBSD) AND QT_FEATURE_opengl
++        extend_gn_target(${buildGn} CONDITION (LINUX OR FREEBSD OR HAIKU) AND QT_FEATURE_opengl
+             SOURCES
+                 ozone/gl_helper.cpp ozone/gl_helper.h
+         )
+@@ -231,7 +231,7 @@ foreach(arch ${archs})
+                 ozone/glx_helper.cpp ozone/glx_helper.h
+         )
+ 
+-        extend_gn_target(${buildGn} CONDITION (LINUX OR FREEBSD) AND QT_FEATURE_opengl AND QT_FEATURE_egl
++        extend_gn_target(${buildGn} CONDITION (LINUX OR FREEBSD OR HAIKU) AND QT_FEATURE_opengl AND QT_FEATURE_egl
+             SOURCES
+                 ozone/egl_helper.cpp ozone/egl_helper.h
+         )
+@@ -462,7 +462,7 @@ foreach(arch ${archs})
+             CONDITION QT_FEATURE_webenginedriver
+         )
+ 
+-        if(LINUX OR FREEBSD)
++        if(LINUX OR FREEBSD OR HAIKU)
+             list(APPEND gnArgArg
+                 angle_enable_gl=true
+                 use_gtk=false # GTK toolkit bindings
+diff --git a/src/host/BUILD.toolchain.gn.in b/src/host/BUILD.toolchain.gn.in
+index fd5d678..069b195 100644
+--- a/src/host/BUILD.toolchain.gn.in
++++ b/src/host/BUILD.toolchain.gn.in
+@@ -6,9 +6,9 @@ gcc_toolchain("@GN_TOOLCHAIN@") {
+   ld = "@CMAKE_CXX_COMPILER@"
+   ar = "@CMAKE_AR@"
+   nm = "@CMAKE_NM@"
+-  extra_cppflags = "%%CPPFLAGS%%"
+-  extra_cxxflags = "%%CXXFLAGS%%"
+-  extra_ldflags = "%%LDFLAGS%%"
++  extra_cppflags = ""
++  extra_cxxflags = ""
++  extra_ldflags = ""
+   toolchain_args = {
+     current_os = "@GN_OS@"
+     current_cpu = "@GN_CPU@"

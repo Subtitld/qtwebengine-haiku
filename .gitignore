@@ -1,0 +1,7 @@
+# The VM's key, disks and run state live next to the scripts on the build
+# machine; none of them belong in the repository.
+ssh_key
+ssh_key.pub
+known_hosts
+*.qcow2
+run/

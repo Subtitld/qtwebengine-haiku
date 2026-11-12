@@ -1,0 +1,604 @@
+From 182c35e69884bf988a4cca8abda5579ef602742c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 23:41:07 -0300
+Subject: [PATCH 07/24] Haiku: base/ process and system info, PartitionAlloc
+ threads
+
+base/ gets Haiku versions of the four per-OS files the BSDs have (process
+handle, iterator, metrics, sys_info), built on team_info, area_info,
+team_usage_info and system_info; libkvm/epoll-shim are not linked.
+PartitionAlloc: thread ids from find_thread, stack top from
+get_thread_info, no sys/syscall.h. The export-template self-tests skip
+__declspec on Haiku (its GCC maps __declspec to __attribute__). ANGLE
+gets its null backend, its only one on Haiku.
+---
+ src/3rdparty/chromium/base/BUILD.gn           |  10 +-
+ .../page_allocator_internals_posix.h          |   2 +
+ .../partition_alloc_base/export_template.h    |   6 +-
+ .../partition_alloc_base/rand_util_posix.cc   |   2 +
+ .../threading/platform_thread_posix.cc        |   6 +-
+ .../src/partition_alloc/stack/stack.cc        |  14 +-
+ src/3rdparty/chromium/base/export_template.h  |   4 +
+ .../base/process/process_handle_haiku.cc      |  33 ++++
+ .../chromium/base/process/process_iterator.h  |   4 +
+ .../base/process/process_iterator_haiku.cc    |  54 ++++++
+ .../base/process/process_metrics_haiku.cc     | 159 ++++++++++++++++++
+ .../chromium/base/system/sys_info_haiku.cc    |  94 +++++++++++
+ .../chromium/v8/src/base/export-template.h    |   4 +
+ src/core/CMakeLists.txt                       |   6 +-
+ 14 files changed, 392 insertions(+), 6 deletions(-)
+ create mode 100644 src/3rdparty/chromium/base/process/process_handle_haiku.cc
+ create mode 100644 src/3rdparty/chromium/base/process/process_iterator_haiku.cc
+ create mode 100644 src/3rdparty/chromium/base/process/process_metrics_haiku.cc
+ create mode 100644 src/3rdparty/chromium/base/system/sys_info_haiku.cc
+
+diff --git a/src/3rdparty/chromium/base/BUILD.gn b/src/3rdparty/chromium/base/BUILD.gn
+index 536958f..c6578dc 100644
+--- a/src/3rdparty/chromium/base/BUILD.gn
++++ b/src/3rdparty/chromium/base/BUILD.gn
+@@ -1117,7 +1117,7 @@ jumbo_component("base") {
+   }
+ 
+   # *BSD needs libkvm
+-  if (is_bsd) {
++  if (is_bsd && !is_haiku) {
+     libs += [
+       "kvm",
+       "epoll-shim",
+@@ -2175,6 +2175,14 @@ jumbo_component("base") {
+       "process/process_metrics_openbsd.cc",
+       "system/sys_info_openbsd.cc",
+     ]
++  } else if (is_haiku) {
++    sources += [
++      "process/process_handle_haiku.cc",
++      "process/process_iterator_haiku.cc",
++      "process/process_metrics_haiku.cc",
++      "system/sys_info_haiku.cc",
++    ]
++    libs += [ "execinfo" ]
+   } else if (is_freebsd) {
+     sources += [
+       "process/process_handle_freebsd.cc",
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
+index ea85ea1..3c15200 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/page_allocator_internals_posix.h
+@@ -6,7 +6,9 @@
+ #define PARTITION_ALLOC_PAGE_ALLOCATOR_INTERNALS_POSIX_H_
+ 
+ #include <sys/mman.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ 
+ #include <algorithm>
+ #include <atomic>
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/export_template.h b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/export_template.h
+index f530c99..e9e03f7 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/export_template.h
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/export_template.h
+@@ -178,10 +178,14 @@
+ 
+ PA_EXPORT_TEMPLATE_TEST(DEFAULT, );  // NOLINT
+ PA_EXPORT_TEMPLATE_TEST(DEFAULT, __attribute__((visibility("default"))));
+-#if !defined(__MINGW32__)
++// Haiku's GCC turns __declspec(x) into __attribute__((x)), which these
++// token-pasting checks cannot take apart.
++#if !defined(__MINGW32__) && !defined(__HAIKU__)
+ PA_EXPORT_TEMPLATE_TEST(EXPORT_DLLEXPORT, __declspec(dllexport));
+ #endif
++#if !defined(__HAIKU__)
+ PA_EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
++#endif
+ 
+ #undef PA_EXPORT_TEMPLATE_TEST
+ #undef PA_EXPORT_TEMPLATE_TEST_DEFAULT_DEFAULT
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
+index 206cead..52bc471 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/rand_util_posix.cc
+@@ -5,7 +5,9 @@
+ #include "partition_alloc/partition_alloc_base/rand_util.h"
+ 
+ #include <fcntl.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ #include <unistd.h>
+ 
+ #include <cerrno>
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
+index 625ccdd..c88d36f 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/threading/platform_thread_posix.cc
+@@ -18,7 +18,9 @@
+ #include "partition_alloc/partition_alloc_base/logging.h"
+ #include "partition_alloc/partition_alloc_base/threading/platform_thread_internal_posix.h"
+ 
+-#if PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS) || PA_BUILDFLAG(IS_BSD)
++#if PA_BUILDFLAG(IS_HAIKU)
++#include <OS.h>
++#elif PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS) || PA_BUILDFLAG(IS_BSD)
+ #include <sys/syscall.h>
+ 
+ #include <atomic>
+@@ -81,6 +83,8 @@ PlatformThreadId PlatformThread::CurrentId() {
+   // into the kernel.
+ #if PA_BUILDFLAG(IS_APPLE)
+   return pthread_mach_thread_np(pthread_self());
++#elif PA_BUILDFLAG(IS_HAIKU)
++  return find_thread(nullptr);
+ #elif PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)
+   static InitAtFork init_at_fork;
+   if (g_thread_id == -1 ||
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/stack/stack.cc b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/stack/stack.cc
+index 15072b5..438d2dd 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/stack/stack.cc
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/stack/stack.cc
+@@ -18,7 +18,9 @@
+ #include <pthread.h>
+ #endif
+ 
+-#if PA_BUILDFLAG(IS_BSD)
++#if PA_BUILDFLAG(IS_HAIKU)
++#include <OS.h>
++#elif PA_BUILDFLAG(IS_BSD)
+ #include <pthread_np.h>
+ #endif
+ 
+@@ -54,6 +56,16 @@ void* GetStackTop() {
+   return pthread_get_stackaddr_np(pthread_self());
+ }
+ 
++#elif PA_BUILDFLAG(IS_HAIKU)
++
++void* GetStackTop() {
++  thread_info info;
++  if (get_thread_info(find_thread(nullptr), &info) != B_OK) {
++    return nullptr;
++  }
++  return info.stack_end;
++}
++
+ #elif PA_BUILDFLAG(IS_OPENBSD)
+ 
+ void* GetStackTop() {
+diff --git a/src/3rdparty/chromium/base/export_template.h b/src/3rdparty/chromium/base/export_template.h
+index 248d0d9..01ab35f 100644
+--- a/src/3rdparty/chromium/base/export_template.h
++++ b/src/3rdparty/chromium/base/export_template.h
+@@ -138,8 +138,12 @@
+ 
+ EXPORT_TEMPLATE_TEST(DEFAULT, );
+ EXPORT_TEMPLATE_TEST(DEFAULT, __attribute__((visibility("default"))));
++// Haiku's GCC turns __declspec(x) into __attribute__((x)), which these
++// token-pasting checks cannot take apart.
++#if !defined(__HAIKU__)
+ EXPORT_TEMPLATE_TEST(EXPORT_DLLEXPORT, __declspec(dllexport));
+ EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
++#endif
+ 
+ #undef EXPORT_TEMPLATE_TEST
+ #undef EXPORT_TEMPLATE_TEST_DEFAULT_DEFAULT
+diff --git a/src/3rdparty/chromium/base/process/process_handle_haiku.cc b/src/3rdparty/chromium/base/process/process_handle_haiku.cc
+new file mode 100644
+index 0000000..0b4777d
+--- /dev/null
++++ b/src/3rdparty/chromium/base/process/process_handle_haiku.cc
+@@ -0,0 +1,33 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/process/process_handle.h"
++
++#include <OS.h>
++#include <image.h>
++
++#include "base/files/file_path.h"
++
++namespace base {
++
++ProcessId GetParentProcessId(ProcessHandle process) {
++  team_info info;
++  if (get_team_info(process, &info) != B_OK) {
++    return -1;
++  }
++  return info.parent;
++}
++
++FilePath GetProcessExecutablePath(ProcessHandle process) {
++  image_info info;
++  int32 cookie = 0;
++  while (get_next_image_info(process, &cookie, &info) == B_OK) {
++    if (info.type == B_APP_IMAGE) {
++      return FilePath(info.name);
++    }
++  }
++  return FilePath();
++}
++
++}  // namespace base
+diff --git a/src/3rdparty/chromium/base/process/process_iterator.h b/src/3rdparty/chromium/base/process/process_iterator.h
+index 3d0734a..057b3f3 100644
+--- a/src/3rdparty/chromium/base/process/process_iterator.h
++++ b/src/3rdparty/chromium/base/process/process_iterator.h
+@@ -25,6 +25,8 @@
+ #include <windows.h>
+ 
+ #include <tlhelp32.h>
++#elif BUILDFLAG(IS_HAIKU)
++#include <OS.h>
+ #elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_OPENBSD)
+ #include <sys/sysctl.h>
+ #elif BUILDFLAG(IS_FREEBSD)
+@@ -116,6 +118,8 @@ class BASE_EXPORT ProcessIterator {
+ #if BUILDFLAG(IS_WIN)
+   HANDLE snapshot_;
+   bool started_iteration_ = false;
++#elif BUILDFLAG(IS_HAIKU)
++  int32 team_cookie_ = 0;
+ #elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_BSD)
+   std::vector<kinfo_proc> kinfo_procs_;
+   size_t index_of_kinfo_proc_ = 0;
+diff --git a/src/3rdparty/chromium/base/process/process_iterator_haiku.cc b/src/3rdparty/chromium/base/process/process_iterator_haiku.cc
+new file mode 100644
+index 0000000..4376b85
+--- /dev/null
++++ b/src/3rdparty/chromium/base/process/process_iterator_haiku.cc
+@@ -0,0 +1,54 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/process/process_iterator.h"
++
++#include <OS.h>
++#include <unistd.h>
++
++#include <string>
++
++#include "base/process/process_handle.h"
++#include "base/strings/string_split.h"
++
++namespace base {
++
++// Haiku lists teams through a cookie, not a table to copy, so the iterator
++// keeps that cookie in place of the process list.
++ProcessIterator::ProcessIterator(const ProcessFilter* filter)
++    : filter_(filter) {}
++
++ProcessIterator::~ProcessIterator() = default;
++
++bool ProcessIterator::CheckForNextProcess() {
++  team_info info;
++  while (get_next_team_info(&team_cookie_, &info) == B_OK) {
++    if (info.uid != getuid()) {
++      continue;
++    }
++
++    // args holds the command line, space-separated and cut at 64 bytes.
++    std::string args(info.args, strnlen(info.args, sizeof(info.args)));
++    entry_.cmd_line_args_ =
++        SplitString(args, " ", KEEP_WHITESPACE, SPLIT_WANT_NONEMPTY);
++    entry_.pid_ = info.team;
++    entry_.ppid_ = info.parent;
++    entry_.gid_ = info.group_id;
++
++    FilePath exe = GetProcessExecutablePath(info.team);
++    entry_.exe_file_ = exe.empty() ? std::string(info.name)
++                                   : exe.BaseName().value();
++    return true;
++  }
++  return false;
++}
++
++bool NamedProcessIterator::IncludeEntry() {
++  if (executable_name_ != entry().exe_file()) {
++    return false;
++  }
++  return ProcessIterator::IncludeEntry();
++}
++
++}  // namespace base
+diff --git a/src/3rdparty/chromium/base/process/process_metrics_haiku.cc b/src/3rdparty/chromium/base/process/process_metrics_haiku.cc
+new file mode 100644
+index 0000000..9211ff1
+--- /dev/null
++++ b/src/3rdparty/chromium/base/process/process_metrics_haiku.cc
+@@ -0,0 +1,159 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/process/process_metrics.h"
++
++#include <OS.h>
++#include <sys/resource.h>
++#include <unistd.h>
++
++#include "base/memory/ptr_util.h"
++#include "base/notreached.h"
++#include "base/values.h"
++
++namespace base {
++
++ProcessMetrics::ProcessMetrics(ProcessHandle process) : process_(process) {}
++
++std::unique_ptr<ProcessMetrics> ProcessMetrics::CreateProcessMetrics(
++    ProcessHandle process) {
++  return WrapUnique(new ProcessMetrics(process));
++}
++
++base::expected<ProcessMemoryInfo, ProcessUsageError>
++ProcessMetrics::GetMemoryInfo() const {
++  team_info team;
++  if (get_team_info(process_, &team) != B_OK) {
++    return base::unexpected(ProcessUsageError::kProcessNotFound);
++  }
++  // The resident set is the RAM behind the team's areas.
++  ProcessMemoryInfo memory_info;
++  area_info area;
++  ssize_t cookie = 0;
++  while (get_next_area_info(process_, &cookie, &area) == B_OK) {
++    memory_info.resident_set_bytes += area.ram_size;
++  }
++  return memory_info;
++}
++
++base::expected<TimeDelta, ProcessCPUUsageError>
++ProcessMetrics::GetCumulativeCPUUsage() {
++  team_usage_info usage;
++  if (get_team_usage_info(process_, B_TEAM_USAGE_SELF, &usage) != B_OK) {
++    return base::unexpected(ProcessCPUUsageError::kProcessNotFound);
++  }
++  return base::ok(Microseconds(usage.user_time + usage.kernel_time));
++}
++
++size_t GetSystemCommitCharge() {
++  system_info info;
++  if (get_system_info(&info) != B_OK) {
++    return 0;
++  }
++  return static_cast<size_t>(info.used_pages * B_PAGE_SIZE / 1024);
++}
++
++int64_t GetNumberOfThreads(ProcessHandle process) {
++  team_info info;
++  if (get_team_info(process, &info) != B_OK) {
++    return 0;
++  }
++  return info.thread_count;
++}
++
++bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
++  system_info info;
++  if (get_system_info(&info) != B_OK) {
++    return false;
++  }
++  meminfo->total = static_cast<int>(info.max_pages * B_PAGE_SIZE / 1024);
++  meminfo->free = static_cast<int>(info.free_memory / 1024);
++  meminfo->available = meminfo->free;
++  meminfo->cached = static_cast<int>(info.cached_pages * B_PAGE_SIZE / 1024);
++  meminfo->swap_total =
++      static_cast<int>(info.max_swap_pages * B_PAGE_SIZE / 1024);
++  meminfo->swap_free =
++      static_cast<int>(info.free_swap_pages * B_PAGE_SIZE / 1024);
++  return true;
++}
++
++int ProcessMetrics::GetOpenFdCount() const {
++  // Haiku does not list another team's descriptors.
++  return -1;
++}
++
++int ProcessMetrics::GetOpenFdSoftLimit() const {
++  struct rlimit limit;
++  if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
++    return -1;
++  }
++  return static_cast<int>(limit.rlim_cur);
++}
++
++int ProcessMetrics::GetIdleWakeupsPerSecond() {
++  NOTIMPLEMENTED();
++  return 0;
++}
++
++bool GetSystemDiskInfo(SystemDiskInfo* diskinfo) {
++  NOTIMPLEMENTED();
++  return false;
++}
++
++bool GetVmStatInfo(VmStatInfo* vmstat) {
++  NOTIMPLEMENTED();
++  return false;
++}
++
++SystemDiskInfo::SystemDiskInfo() = default;
++
++SystemDiskInfo::SystemDiskInfo(const SystemDiskInfo& other) = default;
++
++SystemDiskInfo& SystemDiskInfo::operator=(const SystemDiskInfo&) = default;
++
++Value::Dict SystemDiskInfo::ToDict() const {
++  Value::Dict res;
++  // Write out uint64_t variables as doubles: JS has no other option.
++  res.Set("reads", static_cast<double>(reads));
++  res.Set("reads_merged", static_cast<double>(reads_merged));
++  res.Set("sectors_read", static_cast<double>(sectors_read));
++  res.Set("read_time", static_cast<double>(read_time));
++  res.Set("writes", static_cast<double>(writes));
++  res.Set("writes_merged", static_cast<double>(writes_merged));
++  res.Set("sectors_written", static_cast<double>(sectors_written));
++  res.Set("write_time", static_cast<double>(write_time));
++  res.Set("io", static_cast<double>(io));
++  res.Set("io_time", static_cast<double>(io_time));
++  res.Set("weighted_io_time", static_cast<double>(weighted_io_time));
++  return res;
++}
++
++Value::Dict SystemMemoryInfoKB::ToDict() const {
++  Value::Dict res;
++  res.Set("total", total);
++  res.Set("free", free);
++  res.Set("available", available);
++  res.Set("buffers", buffers);
++  res.Set("cached", cached);
++  res.Set("active_anon", active_anon);
++  res.Set("inactive_anon", inactive_anon);
++  res.Set("active_file", active_file);
++  res.Set("inactive_file", inactive_file);
++  res.Set("swap_total", swap_total);
++  res.Set("swap_free", swap_free);
++  res.Set("swap_used", swap_total - swap_free);
++  res.Set("dirty", dirty);
++  res.Set("reclaimable", reclaimable);
++  return res;
++}
++
++Value::Dict VmStatInfo::ToDict() const {
++  Value::Dict res;
++  res.Set("pswpin", static_cast<int>(pswpin));
++  res.Set("pswpout", static_cast<int>(pswpout));
++  res.Set("pgmajfault", static_cast<int>(pgmajfault));
++  return res;
++}
++
++}  // namespace base
+diff --git a/src/3rdparty/chromium/base/system/sys_info_haiku.cc b/src/3rdparty/chromium/base/system/sys_info_haiku.cc
+new file mode 100644
+index 0000000..d76feb7
+--- /dev/null
++++ b/src/3rdparty/chromium/base/system/sys_info_haiku.cc
+@@ -0,0 +1,94 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/system/sys_info.h"
++
++#include <OS.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#include <string>
++
++#include "base/check.h"
++#include "base/process/process_metrics.h"
++#include "base/strings/string_util.h"
++
++namespace base {
++
++namespace {
++
++bool GetSystemInfo(system_info* info) {
++  return get_system_info(info) == B_OK;
++}
++
++}  // namespace
++
++int SysInfo::NumberOfProcessors() {
++  system_info info;
++  if (!GetSystemInfo(&info) || info.cpu_count == 0) {
++    return 1;
++  }
++  return static_cast<int>(info.cpu_count);
++}
++
++uint64_t SysInfo::AmountOfPhysicalMemoryImpl() {
++  system_info info;
++  if (!GetSystemInfo(&info)) {
++    return 0;
++  }
++  return info.max_pages * B_PAGE_SIZE;
++}
++
++uint64_t SysInfo::AmountOfAvailablePhysicalMemoryImpl() {
++  system_info info;
++  if (!GetSystemInfo(&info)) {
++    return 0;
++  }
++  return info.free_memory;
++}
++
++uint64_t SysInfo::AmountOfAvailablePhysicalMemory(
++    const SystemMemoryInfoKB& info) {
++  uint64_t res_kb = info.available != 0
++                        ? info.available - info.active_file
++                        : info.free + info.reclaimable + info.inactive_file;
++  return res_kb * 1024;
++}
++
++std::string SysInfo::CPUModelName() {
++  cpu_topology_node_info nodes[64];
++  uint32 count = std::size(nodes);
++  if (get_cpu_topology_info(nodes, &count) != B_OK) {
++    return std::string();
++  }
++  for (uint32 i = 0; i < count; i++) {
++    if (nodes[i].type == B_TOPOLOGY_PACKAGE) {
++      switch (nodes[i].data.package.vendor) {
++        case B_CPU_VENDOR_INTEL:
++          return "Intel";
++        case B_CPU_VENDOR_AMD:
++          return "AMD";
++        default:
++          break;
++      }
++    }
++  }
++  return std::string();
++}
++
++uint64_t SysInfo::MaxSharedMemorySize() {
++  // Haiku shares memory through areas, with no fixed upper size.
++  return 0;
++}
++
++SysInfo::HardwareInfo SysInfo::GetHardwareInfoSync() {
++  HardwareInfo info;
++  info.manufacturer = "Haiku";
++  info.model = HardwareModelName();
++  DCHECK(IsStringUTF8(info.manufacturer));
++  DCHECK(IsStringUTF8(info.model));
++  return info;
++}
++
++}  // namespace base
+diff --git a/src/3rdparty/chromium/v8/src/base/export-template.h b/src/3rdparty/chromium/v8/src/base/export-template.h
+index 861cfe4..c980721 100644
+--- a/src/3rdparty/chromium/v8/src/base/export-template.h
++++ b/src/3rdparty/chromium/v8/src/base/export-template.h
+@@ -153,8 +153,12 @@
+ 
+ EXPORT_TEMPLATE_TEST(DEFAULT, );
+ EXPORT_TEMPLATE_TEST(DEFAULT, __attribute__((visibility("default"))));
++// Haiku's GCC turns __declspec(x) into __attribute__((x)), which these
++// token-pasting checks cannot take apart.
++#if !defined(__HAIKU__)
+ EXPORT_TEMPLATE_TEST(MSVC_HACK, __declspec(dllexport));
+ EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
++#endif
+ 
+ #undef EXPORT_TEMPLATE_TEST
+ #undef EXPORT_TEMPLATE_TEST_DEFAULT_DEFAULT
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index dbbe94f..b35b1fa 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -464,9 +464,11 @@ foreach(arch ${archs})
+ 
+         if(LINUX OR FREEBSD OR HAIKU)
+             # Haiku has neither an EGL nor a GLX display for ANGLE's GL
+-            # backend: it renders in software.
++            # backend: it renders in software, and ANGLE gets its null
++            # backend so it still has one.
+             if(HAIKU)
+-                list(APPEND gnArgArg angle_enable_gl=false angle_enable_vulkan=false)
++                list(APPEND gnArgArg angle_enable_gl=false angle_enable_vulkan=false
++                    angle_enable_null=true)
+             else()
+                 list(APPEND gnArgArg angle_enable_gl=true)
+             endif()

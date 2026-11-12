@@ -1,0 +1,45 @@
+From 0925c2e7592e3443ac22868d176387692b2ab7bf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 22:32:51 -0300
+Subject: [PATCH 04/24] Haiku: nasm finds endian.h where Haiku has it
+
+---
+ .../chromium/third_party/nasm/config/config-linux.h       | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/3rdparty/chromium/third_party/nasm/config/config-linux.h b/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
+index c89bcc8..799ce9f 100644
+--- a/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
++++ b/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
+@@ -183,7 +183,11 @@
+ #define HAVE_DECL_STRSEP 1
+ 
+ /* Define to 1 if you have the <endian.h> header file. */
++#ifdef __HAIKU__
++#define HAVE_ENDIAN_H 1
++#else
+ /* #undef HAVE_ENDIAN_H */
++#endif
+ 
+ /* Define to 1 if you have the `faccessat' function. */
+ #define HAVE_FACCESSAT 1
+@@ -330,7 +334,9 @@
+ #define HAVE_ISCNTRL 1
+ 
+ /* Define to 1 if you have the <machine/endian.h> header file. */
++#ifndef __HAIKU__
+ #define HAVE_MACHINE_ENDIAN_H 1
++#endif
+ 
+ /* Define to 1 if you have the <memory.h> header file. */
+ #define HAVE_MEMORY_H 1
+@@ -411,7 +417,9 @@
+ #define HAVE_SYSCONF 1
+ 
+ /* Define to 1 if you have the <sys/endian.h> header file. */
++#ifndef __HAIKU__
+ #define HAVE_SYS_ENDIAN_H 1
++#endif
+ 
+ /* Define to 1 if you have the <sys/mman.h> header file. */
+ #define HAVE_SYS_MMAN_H 1

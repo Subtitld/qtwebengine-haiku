@@ -1,0 +1,58 @@
+From 845f2303463eabb9342adf42d051349a5f5e2e66 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 01:37:23 -0300
+Subject: [PATCH 13/24] Haiku: process_posix without sysctl, update params OS
+ name, proc_util
+
+process_posix keeps the BSD kqueue wait for non-child processes (Haiku's
+libbsd has EVFILT_PROC) but has no sysctl.h. The update client names the
+OS "haiku". The sandbox's proc_util skips its d_type check.
+---
+ src/3rdparty/chromium/base/process/process_posix.cc          | 2 +-
+ .../chromium/components/update_client/update_query_params.cc | 2 ++
+ src/3rdparty/chromium/sandbox/linux/services/proc_util.cc    | 5 +++++
+ 3 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/base/process/process_posix.cc b/src/3rdparty/chromium/base/process/process_posix.cc
+index 1dc302d..26e3d19 100644
+--- a/src/3rdparty/chromium/base/process/process_posix.cc
++++ b/src/3rdparty/chromium/base/process/process_posix.cc
+@@ -27,7 +27,7 @@
+ #include <sys/event.h>
+ #endif
+ 
+-#if BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_BSD) && !BUILDFLAG(IS_HAIKU)
+ #include <sys/types.h>
+ #include <sys/sysctl.h> 
+ #endif
+diff --git a/src/3rdparty/chromium/components/update_client/update_query_params.cc b/src/3rdparty/chromium/components/update_client/update_query_params.cc
+index 2e70a2d..4b25996 100644
+--- a/src/3rdparty/chromium/components/update_client/update_query_params.cc
++++ b/src/3rdparty/chromium/components/update_client/update_query_params.cc
+@@ -37,6 +37,8 @@ const char kOs[] =
+     "linux";
+ #elif BUILDFLAG(IS_FUCHSIA)
+     "fuchsia";
++#elif BUILDFLAG(IS_HAIKU)
++    "haiku";
+ #elif BUILDFLAG(IS_OPENBSD)
+     "openbsd";
+ #elif defined(OS_FREEBSD)
+diff --git a/src/3rdparty/chromium/sandbox/linux/services/proc_util.cc b/src/3rdparty/chromium/sandbox/linux/services/proc_util.cc
+index de8198f..404822f 100644
+--- a/src/3rdparty/chromium/sandbox/linux/services/proc_util.cc
++++ b/src/3rdparty/chromium/sandbox/linux/services/proc_util.cc
+@@ -103,7 +103,12 @@ bool ProcUtil::HasOpenDirectory(int proc_fd) {
+     // Check for stale symlinks and skip them if they meet certain criteria.
+     // See crbug.com/362595425
+     char filename[PATH_MAX] = {};  // Initialize for robustness
++#if defined(__HAIKU__)
++    // Haiku's dirent has no d_type; it has no /proc/self/fd either.
++    if (false &&
++#else
+     if (stat_res == -1 && errno == ESTALE && de->d_type == DT_LNK &&
++#endif
+         readlinkat(proc_self_fd, de->d_name, filename, sizeof(filename)) !=
+             -1) {
+       static constexpr std::string_view kStalePrefix = "/google/cog/";

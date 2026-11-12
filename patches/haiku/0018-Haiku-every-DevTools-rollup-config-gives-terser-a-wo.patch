@@ -1,0 +1,91 @@
+From ccbad9ac38cda049e291a2cc0489381c8b7af3d2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 03:25:53 -0300
+Subject: [PATCH 18/24] Haiku: every DevTools rollup config gives terser a
+ worker count
+
+---
+ .../models/live-metrics/web-vitals-injected/rollup.config.mjs  | 3 ++-
+ .../src/front_end/panels/recorder/injected/rollup.config.mjs   | 3 ++-
+ .../src/front_end/third_party/codemirror.next/rollup.config.js | 3 ++-
+ .../src/front_end/third_party/lit/rollup.config.mjs            | 3 ++-
+ 4 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/models/live-metrics/web-vitals-injected/rollup.config.mjs b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/models/live-metrics/web-vitals-injected/rollup.config.mjs
+index 87d831e..e35efcd 100644
+--- a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/models/live-metrics/web-vitals-injected/rollup.config.mjs
++++ b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/models/live-metrics/web-vitals-injected/rollup.config.mjs
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import terser from '@rollup/plugin-terser';
++import {cpus} from 'node:os';
+ 
+ /**
+  * Checks if an env variable is true.
+@@ -17,5 +18,5 @@ function isEnvVarTrue(envVar) {
+ export default {
+   treeshake: true,
+   output: [{format: 'iife'}],
+-  plugins: isEnvVarTrue(process.env.DEBUG_INJECTED) ? [] : [terser()]
++  plugins: isEnvVarTrue(process.env.DEBUG_INJECTED) ? [] : [terser({maxWorkers: cpus().length || 4})]
+ };
+diff --git a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/panels/recorder/injected/rollup.config.mjs b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/panels/recorder/injected/rollup.config.mjs
+index e844c48..ca3a710 100644
+--- a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/panels/recorder/injected/rollup.config.mjs
++++ b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/panels/recorder/injected/rollup.config.mjs
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import terser from '@rollup/plugin-terser';
++import {cpus} from 'node:os';
+ 
+ /**
+  * Checks if an env variable is true.
+@@ -17,5 +18,5 @@ function isEnvVarTrue(envVar) {
+ export default {
+   treeshake: false,
+   output: [{format: 'iife'}],
+-  plugins: !isEnvVarTrue(process.env.DEBUG_INJECTED) ? [terser()] : []
++  plugins: !isEnvVarTrue(process.env.DEBUG_INJECTED) ? [terser({maxWorkers: cpus().length || 4})] : []
+ };
+diff --git a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/codemirror.next/rollup.config.js b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/codemirror.next/rollup.config.js
+index ba896bb..5d67dc4 100644
+--- a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/codemirror.next/rollup.config.js
++++ b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/codemirror.next/rollup.config.js
+@@ -1,5 +1,6 @@
+ import {nodeResolve} from '@rollup/plugin-node-resolve';
+ import terser from '@rollup/plugin-terser';
++import {cpus} from 'node:os';
+ import dts from 'rollup-plugin-dts';
+ 
+ export default [{
+@@ -27,7 +28,7 @@ export default [{
+   },
+   plugins: [
+     nodeResolve(),
+-    terser()
++    terser({maxWorkers: cpus().length || 4})
+   ]
+ }, {
+   input: './bundle.d.ts',
+diff --git a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/lit/rollup.config.mjs b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/lit/rollup.config.mjs
+index cb3f12c..87684e2 100644
+--- a/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/lit/rollup.config.mjs
++++ b/src/3rdparty/chromium/third_party/devtools-frontend/src/front_end/third_party/lit/rollup.config.mjs
+@@ -1,5 +1,6 @@
+ import { nodeResolve } from "@rollup/plugin-node-resolve";
+ import terser from "@rollup/plugin-terser";
++import {cpus} from "node:os";
+ import dts from "rollup-plugin-dts";
+ 
+ export default ['directive', 'directives', 'decorators', 'lit', 'static-html'].flatMap(filename => ([
+@@ -10,7 +11,7 @@ export default ['directive', 'directives', 'decorators', 'lit', 'static-html'].f
+       file: `lib/${filename}.js`,
+       sourcemap: true,
+     },
+-    plugins: [nodeResolve(), terser()],
++    plugins: [nodeResolve(), terser({maxWorkers: cpus().length || 4})],
+   },
+   {
+     input: `./src/${filename}.d.ts`,

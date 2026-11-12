@@ -1,0 +1,302 @@
+From a8873dc18d58f3d21229da1af5ccf4f1d8f39ebb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 23:21:22 -0300
+Subject: [PATCH 06/24] Haiku: V8 platform, Dawn, ANGLE, libsync, pkg-config
+
+V8 gets V8_OS_HAIKU (POSIX, no target OS define, so none of the Linux
+signal/trap-handler code) and platform-haiku.cc, carried forward from
+the Qt 5 port: image list from get_next_image_info, stack start from
+get_thread_info, thread ids and names via find_thread/rename_thread.
+Dawn counts Haiku with the BSDs. ANGLE builds no GL or Vulkan backend on
+Haiku (no EGL/GLX display; it renders in software). libsync compiles to
+ioctls that fail. Chromium's pkg-config wrapper returned nothing on any
+platform it did not know, so no system library had flags: Haiku added
+there and to the other build scripts that look at sys.platform.
+---
+ .../chromium/build/config/linux/pkg-config.py |  2 +-
+ src/3rdparty/chromium/build/landmine_utils.py |  2 +-
+ .../bindings/scripts/bind_gen/style_format.py |  2 +-
+ .../dawn/src/dawn/common/Platform.h           |  2 +-
+ .../libsync/src/include/sync/sync.h           |  2 +-
+ .../chromium/third_party/libsync/src/sync.c   | 11 +++-
+ .../chromium/tools/licenses/licenses.py       |  2 +-
+ src/3rdparty/chromium/v8/BUILD.gn             |  8 ++-
+ src/3rdparty/chromium/v8/include/v8config.h   |  5 ++
+ .../v8/src/base/platform/platform-haiku.cc    | 62 +++++++++++++++++++
+ .../v8/src/base/platform/platform-posix.cc    | 14 ++++-
+ src/core/CMakeLists.txt                       |  8 ++-
+ 12 files changed, 108 insertions(+), 12 deletions(-)
+ create mode 100644 src/3rdparty/chromium/v8/src/base/platform/platform-haiku.cc
+
+diff --git a/src/3rdparty/chromium/build/config/linux/pkg-config.py b/src/3rdparty/chromium/build/config/linux/pkg-config.py
+index 92bfc0a..60dd6b9 100755
+--- a/src/3rdparty/chromium/build/config/linux/pkg-config.py
++++ b/src/3rdparty/chromium/build/config/linux/pkg-config.py
+@@ -113,7 +113,7 @@ def main():
+   # If this is run on non-Linux platforms, just return nothing and indicate
+   # success. This allows us to "kind of emulate" a Linux build from other
+   # platforms.
+-  if not sys.platform.startswith(tuple(['linux', 'darwin', 'freebsd', 'openbsd'])):
++  if not sys.platform.startswith(tuple(['linux', 'darwin', 'freebsd', 'openbsd', 'haiku'])):
+     print("[[],[],[],[],[]]")
+     return 0
+ 
+diff --git a/src/3rdparty/chromium/build/landmine_utils.py b/src/3rdparty/chromium/build/landmine_utils.py
+index b126f4f..eefdf8b 100644
+--- a/src/3rdparty/chromium/build/landmine_utils.py
++++ b/src/3rdparty/chromium/build/landmine_utils.py
+@@ -11,7 +11,7 @@ def IsWindows():
+ 
+ 
+ def IsLinux():
+-  return sys.platform.startswith(('linux', 'freebsd', 'netbsd', 'openbsd'))
++  return sys.platform.startswith(('linux', 'freebsd', 'netbsd', 'openbsd', 'haiku'))
+ 
+ 
+ def IsMac():
+diff --git a/src/3rdparty/chromium/third_party/blink/renderer/bindings/scripts/bind_gen/style_format.py b/src/3rdparty/chromium/third_party/blink/renderer/bindings/scripts/bind_gen/style_format.py
+index cdbf6cb..042d05a 100644
+--- a/src/3rdparty/chromium/third_party/blink/renderer/bindings/scripts/bind_gen/style_format.py
++++ b/src/3rdparty/chromium/third_party/blink/renderer/bindings/scripts/bind_gen/style_format.py
+@@ -30,7 +30,7 @@ def init(root_src_dir, enable_style_format=True):
+ 
+     # Determine //buildtools/<platform>/ directory
+     new_path_platform_suffix = ""
+-    if sys.platform.startswith(("linux","openbsd","freebsd")):
++    if sys.platform.startswith(("linux","openbsd","freebsd","haiku")):
+         platform = "linux64"
+         exe_suffix = ""
+     elif sys.platform.startswith("darwin"):
+diff --git a/src/3rdparty/chromium/third_party/dawn/src/dawn/common/Platform.h b/src/3rdparty/chromium/third_party/dawn/src/dawn/common/Platform.h
+index 44a7cfa..03030c3 100644
+--- a/src/3rdparty/chromium/third_party/dawn/src/dawn/common/Platform.h
++++ b/src/3rdparty/chromium/third_party/dawn/src/dawn/common/Platform.h
+@@ -59,7 +59,7 @@
+ #error "Unsupported Windows platform."
+ #endif
+ 
+-#elif defined(__OpenBSD__) || defined(__FreeBSD__)
++#elif defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__HAIKU__)
+ #define DAWN_PLATFORM_IS_LINUX 1
+ #define DAWN_PLATFORM_IS_BSD 1
+ #define DAWN_PLATFORM_IS_POSIX 1
+diff --git a/src/3rdparty/chromium/third_party/libsync/src/include/sync/sync.h b/src/3rdparty/chromium/third_party/libsync/src/include/sync/sync.h
+index 5f407c0..5321ffa 100644
+--- a/src/3rdparty/chromium/third_party/libsync/src/include/sync/sync.h
++++ b/src/3rdparty/chromium/third_party/libsync/src/include/sync/sync.h
+@@ -22,7 +22,7 @@
+ #include <sys/cdefs.h>
+ #include <stdint.h>
+ 
+-#if !defined(__OpenBSD__) && !defined(__FreeBSD__)
++#if !defined(__OpenBSD__) && !defined(__FreeBSD__) && !defined(__HAIKU__)
+ #include <linux/types.h>
+ #endif
+ 
+diff --git a/src/3rdparty/chromium/third_party/libsync/src/sync.c b/src/3rdparty/chromium/third_party/libsync/src/sync.c
+index cd943d0..dd612f4 100644
+--- a/src/3rdparty/chromium/third_party/libsync/src/sync.c
++++ b/src/3rdparty/chromium/third_party/libsync/src/sync.c
+@@ -29,7 +29,16 @@
+ 
+ #include <sync/sync.h>
+ 
+-#if defined(__OpenBSD__) || defined(__FreeBSD__)
++#if defined(__HAIKU__)
++/* No sync files on Haiku: every ioctl below fails at run time. */
++#include <sys/ioccom.h>
++typedef uint8_t __u8;
++typedef uint32_t __u32;
++typedef int32_t __s32;
++#ifndef ETIME
++#define ETIME ETIMEDOUT
++#endif
++#elif defined(__OpenBSD__) || defined(__FreeBSD__)
+ typedef __uint8_t __u8;
+ typedef __uint32_t __u32;
+ typedef __int32_t __s32;
+diff --git a/src/3rdparty/chromium/tools/licenses/licenses.py b/src/3rdparty/chromium/tools/licenses/licenses.py
+index ee340b9..efb314c 100755
+--- a/src/3rdparty/chromium/tools/licenses/licenses.py
++++ b/src/3rdparty/chromium/tools/licenses/licenses.py
+@@ -808,7 +808,7 @@ def _GnBinary():
+   exe = 'gn'
+   if sys.platform.startswith('linux'):
+     subdir = 'linux64'
+-  elif sys.platform.startswith('freebsd'):
++  elif sys.platform.startswith(('freebsd', 'haiku')):
+     subdir = '../../../../.build/install/bin'
+   elif sys.platform == 'darwin':
+     subdir = 'mac'
+diff --git a/src/3rdparty/chromium/v8/BUILD.gn b/src/3rdparty/chromium/v8/BUILD.gn
+index c87cd55..d400d8f 100644
+--- a/src/3rdparty/chromium/v8/BUILD.gn
++++ b/src/3rdparty/chromium/v8/BUILD.gn
+@@ -6652,7 +6652,13 @@ v8_component("v8_libbase") {
+     }
+   }
+ 
+-  if ((is_linux || is_chromeos) && !is_bsd) {
++  if (is_haiku) {
++    sources += [
++      "src/base/debug/stack_trace_posix.cc",
++      "src/base/platform/platform-haiku.cc",
++    ]
++    libs = [ "execinfo" ]
++  } else if ((is_linux || is_chromeos) && !is_bsd) {
+     sources += [
+       "src/base/debug/stack_trace_posix.cc",
+       "src/base/platform/platform-linux.cc",
+diff --git a/src/3rdparty/chromium/v8/include/v8config.h b/src/3rdparty/chromium/v8/include/v8config.h
+index 406a02b..1aecceb 100644
+--- a/src/3rdparty/chromium/v8/include/v8config.h
++++ b/src/3rdparty/chromium/v8/include/v8config.h
+@@ -171,6 +171,11 @@ path. Add it with -I<path> to the command line
+ # define V8_OS_QNX 1
+ # define V8_OS_STRING "qnx"
+ 
++#elif defined(__HAIKU__)
++# define V8_OS_HAIKU 1
++# define V8_OS_POSIX 1
++# define V8_OS_STRING "haiku"
++
+ #elif defined(_WIN32)
+ # define V8_OS_WIN 1
+ # define V8_OS_STRING "windows"
+diff --git a/src/3rdparty/chromium/v8/src/base/platform/platform-haiku.cc b/src/3rdparty/chromium/v8/src/base/platform/platform-haiku.cc
+new file mode 100644
+index 0000000..b10e777
+--- /dev/null
++++ b/src/3rdparty/chromium/v8/src/base/platform/platform-haiku.cc
+@@ -0,0 +1,62 @@
++// Copyright 2012 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Platform-specific code for Haiku goes here. For the POSIX-compatible
++// parts, the implementation is in platform-posix.cc.
++
++#include <OS.h>
++#include <image.h>
++#include <pthread.h>
++#include <string.h>
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "src/base/macros.h"
++#include "src/base/platform/platform-posix-time.h"
++#include "src/base/platform/platform-posix.h"
++#include "src/base/platform/platform.h"
++
++namespace v8 {
++namespace base {
++
++TimezoneCache* OS::CreateTimezoneCache() {
++  return new PosixDefaultTimezoneCache();
++}
++
++std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
++  std::vector<SharedLibraryAddress> result;
++  image_info info;
++  int32 cookie = 0;
++  while (get_next_image_info(B_CURRENT_TEAM, &cookie, &info) == B_OK) {
++    const char* sep = strrchr(info.name, '/');
++    std::string lib_name(sep != nullptr ? sep + 1 : info.name);
++    uintptr_t start = reinterpret_cast<uintptr_t>(info.text);
++    result.push_back(
++        SharedLibraryAddress(lib_name, start, start + info.text_size));
++  }
++  return result;
++}
++
++void OS::SignalCodeMovingGC() {}
++
++void OS::AdjustSchedulingParams() {}
++
++std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
++    OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
++    size_t alignment) {
++  return std::nullopt;
++}
++
++// static
++Stack::StackSlot Stack::ObtainCurrentThreadStackStart() {
++  thread_info info;
++  if (get_thread_info(find_thread(nullptr), &info) != B_OK) return nullptr;
++  // Stacks grow down: the start is the highest address.
++  return info.stack_end;
++}
++
++}  // namespace base
++}  // namespace v8
+diff --git a/src/3rdparty/chromium/v8/src/base/platform/platform-posix.cc b/src/3rdparty/chromium/v8/src/base/platform/platform-posix.cc
+index 0e7e140..078c817 100644
+--- a/src/3rdparty/chromium/v8/src/base/platform/platform-posix.cc
++++ b/src/3rdparty/chromium/v8/src/base/platform/platform-posix.cc
+@@ -71,10 +71,14 @@
+ #include <sys/resource.h>
+ #endif
+ 
+-#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS
++#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS && !V8_OS_HAIKU
+ #include <sys/syscall.h>
+ #endif
+ 
++#if V8_OS_HAIKU
++#include <OS.h>
++#endif
++
+ #if V8_OS_FREEBSD || V8_OS_DARWIN || V8_OS_BSD || V8_OS_SOLARIS
+ #define MAP_ANONYMOUS MAP_ANON
+ #endif
+@@ -867,6 +871,8 @@ int OS::GetCurrentThreadId() {
+   return static_cast<int>(pthread_self());
+ #elif V8_OS_ZOS
+   return gettid();
++#elif V8_OS_HAIKU
++  return static_cast<int>(find_thread(nullptr));
+ #else
+   return static_cast<int>(reinterpret_cast<intptr_t>(pthread_self()));
+ #endif
+@@ -1175,7 +1181,9 @@ Thread::~Thread() {
+ 
+ 
+ static void SetThreadName(const char* name) {
+-#if V8_OS_DRAGONFLYBSD || V8_OS_FREEBSD || V8_OS_OPENBSD
++#if V8_OS_HAIKU
++  rename_thread(find_thread(nullptr), name);
++#elif V8_OS_DRAGONFLYBSD || V8_OS_FREEBSD || V8_OS_OPENBSD
+   pthread_set_name_np(pthread_self(), name);
+ #elif V8_OS_NETBSD
+   static_assert(Thread::kMaxThreadNameLength <= PTHREAD_MAX_NAMELEN_NP);
+@@ -1354,7 +1362,7 @@ void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
+ // keep this version in POSIX as most Linux-compatible derivatives will
+ // support it. MacOS and FreeBSD are different here.
+ #if !defined(V8_OS_FREEBSD) && !defined(V8_OS_DARWIN) && !defined(_AIX) && \
+-    !defined(V8_OS_SOLARIS) && !defined(V8_OS_OPENBSD)
++    !defined(V8_OS_SOLARIS) && !defined(V8_OS_OPENBSD) && !defined(V8_OS_HAIKU)
+ 
+ namespace {
+ #if DEBUG
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 143ba52..dbbe94f 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -463,8 +463,14 @@ foreach(arch ${archs})
+         )
+ 
+         if(LINUX OR FREEBSD OR HAIKU)
++            # Haiku has neither an EGL nor a GLX display for ANGLE's GL
++            # backend: it renders in software.
++            if(HAIKU)
++                list(APPEND gnArgArg angle_enable_gl=false angle_enable_vulkan=false)
++            else()
++                list(APPEND gnArgArg angle_enable_gl=true)
++            endif()
+             list(APPEND gnArgArg
+-                angle_enable_gl=true
+                 use_gtk=false # GTK toolkit bindings
+                 use_qt5=false # Qt5 toolkit bindings
+                 use_gio=false

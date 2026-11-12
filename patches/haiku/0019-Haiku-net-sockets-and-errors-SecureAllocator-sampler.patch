@@ -1,0 +1,163 @@
+From 32384b850a19bdaa2295243e1598052cc35e379a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 03:38:56 -0300
+Subject: [PATCH 19/24] Haiku: net/ sockets and errors, SecureAllocator ==,
+ sampler include
+
+UDP multicast uses an ip_mreqn laid out like Haiku's ip_mreq (no interface
+index); IPv6 traffic-class options get numbers the kernel rejects; peer
+credentials via SO_PEERCRED; no EUSERS; IFF_LINK for IFF_RUNNING.
+crypto::SecureAllocator gets operator==, which the copy-on-write
+std::string of Haiku's GCC needs. V8's sampler takes ucontext_t from
+signal.h.
+---
+ .../chromium/crypto/process_bound_string.h    |  8 +++++
+ .../chromium/net/base/net_errors_posix.cc     |  2 ++
+ .../net/base/network_interfaces_getifaddrs.cc |  5 ++++
+ .../chromium/net/socket/udp_socket_posix.cc   | 30 +++++++++++++++++--
+ .../socket/unix_domain_server_socket_posix.cc |  3 +-
+ .../chromium/v8/src/libsampler/sampler.cc     |  3 +-
+ 6 files changed, 46 insertions(+), 5 deletions(-)
+
+diff --git a/src/3rdparty/chromium/crypto/process_bound_string.h b/src/3rdparty/chromium/crypto/process_bound_string.h
+index 3da58b0..e276ba0 100644
+--- a/src/3rdparty/chromium/crypto/process_bound_string.h
++++ b/src/3rdparty/chromium/crypto/process_bound_string.h
+@@ -67,6 +67,14 @@ struct CRYPTO_EXPORT SecureAllocator {
+   };
+ };
+ 
++// The allocator holds no state, so any two compare equal. Allocator
++// requirements ask for this; libstdc++'s copy-on-write std::string (Haiku's
++// GCC uses the old string ABI) actually calls it.
++template <typename T, typename U>
++bool operator==(const SecureAllocator<T>&, const SecureAllocator<U>&) noexcept {
++  return true;
++}
++
+ // On supported platforms, a process bound string cannot have its content read
+ // by other processes on the system. On unsupported platforms it provides no
+ // difference over a native string except it does more copies.
+diff --git a/src/3rdparty/chromium/net/base/net_errors_posix.cc b/src/3rdparty/chromium/net/base/net_errors_posix.cc
+index df49829..71ea8f7 100644
+--- a/src/3rdparty/chromium/net/base/net_errors_posix.cc
++++ b/src/3rdparty/chromium/net/base/net_errors_posix.cc
+@@ -107,8 +107,10 @@ Error MapSystemError(logging::SystemErrorCode os_error) {
+       return ERR_ACCESS_DENIED;
+     case ETXTBSY:  // Text file busy.
+       return ERR_ACCESS_DENIED;
++#if defined(EUSERS)  // Haiku has no EUSERS.
+     case EUSERS:  // Too many users.
+       return ERR_INSUFFICIENT_RESOURCES;
++#endif
+     case EMFILE:  // Too many open files.
+       return ERR_INSUFFICIENT_RESOURCES;
+     case ENOPROTOOPT:  // Protocol option not supported.
+diff --git a/src/3rdparty/chromium/net/base/network_interfaces_getifaddrs.cc b/src/3rdparty/chromium/net/base/network_interfaces_getifaddrs.cc
+index cec5c39..0e923a3 100644
+--- a/src/3rdparty/chromium/net/base/network_interfaces_getifaddrs.cc
++++ b/src/3rdparty/chromium/net/base/network_interfaces_getifaddrs.cc
+@@ -144,7 +144,12 @@ bool IfaddrsToNetworkInterfaceList(int policy,
+     if (!(IFF_UP & interface->ifa_flags)) {
+       continue;
+     }
++#if defined(IFF_RUNNING)
+     if (!(IFF_RUNNING & interface->ifa_flags))
++#else
++    // Haiku calls an interface with a link IFF_LINK.
++    if (!(IFF_LINK & interface->ifa_flags))
++#endif
+       continue;
+     if (IFF_LOOPBACK & interface->ifa_flags)
+       continue;
+diff --git a/src/3rdparty/chromium/net/socket/udp_socket_posix.cc b/src/3rdparty/chromium/net/socket/udp_socket_posix.cc
+index 4e596f9..11ba32d 100644
+--- a/src/3rdparty/chromium/net/socket/udp_socket_posix.cc
++++ b/src/3rdparty/chromium/net/socket/udp_socket_posix.cc
+@@ -71,6 +71,30 @@
+ #include "base/mac/mac_util.h"
+ #endif  // BUILDFLAG(IS_MAC)
+ 
++#if BUILDFLAG(IS_HAIKU)
++// Haiku has ip_mreq but no ip_mreqn. This one starts with ip_mreq's two
++// fields, and the calls below pass the kernel sizeof(ip_mreq), so the
++// interface index is dropped: the interface is chosen by address (any).
++struct ip_mreqn {
++  struct in_addr imr_multiaddr;
++  struct in_addr imr_address;
++  int imr_ifindex;
++};
++constexpr socklen_t kIpMreqnSize = sizeof(struct ip_mreq);
++// Options Haiku lacks: unknown numbers make the calls fail, which is handled.
++#ifndef IPV6_TCLASS
++#define IPV6_TCLASS 0x7f01
++#endif
++#ifndef IPV6_RECVTCLASS
++#define IPV6_RECVTCLASS 0x7f03
++#endif
++#ifndef IP_DEFAULT_MULTICAST_TTL
++#define IP_DEFAULT_MULTICAST_TTL 1
++#endif
++#else
++constexpr socklen_t kIpMreqnSize = sizeof(ip_mreqn);
++#endif
++
+ namespace net {
+ 
+ namespace {
+@@ -864,7 +888,7 @@ int UDPSocketPosix::SetMulticastOptions() {
+         mreq.imr_ifindex = multicast_interface_;
+         mreq.imr_address.s_addr = htonl(INADDR_ANY);
+         int rv = setsockopt(socket_, IPPROTO_IP, IP_MULTICAST_IF,
+-                            reinterpret_cast<const char*>(&mreq), sizeof(mreq));
++                            reinterpret_cast<const char*>(&mreq), kIpMreqnSize);
+         if (rv)
+           return MapSystemError(errno);
+         break;
+@@ -931,7 +955,7 @@ int UDPSocketPosix::JoinGroup(const IPAddress& group_address) const {
+       memcpy(&mreq.imr_multiaddr, group_address.bytes().data(),
+              IPAddress::kIPv4AddressSize);
+       int rv = setsockopt(socket_, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+-                          &mreq, sizeof(mreq));
++                          &mreq, kIpMreqnSize);
+       if (rv < 0)
+         return MapSystemError(errno);
+       return OK;
+@@ -970,7 +994,7 @@ int UDPSocketPosix::LeaveGroup(const IPAddress& group_address) const {
+       memcpy(&mreq.imr_multiaddr, group_address.bytes().data(),
+              IPAddress::kIPv4AddressSize);
+       int rv = setsockopt(socket_, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+-                          &mreq, sizeof(mreq));
++                          &mreq, kIpMreqnSize);
+       if (rv < 0)
+         return MapSystemError(errno);
+       return OK;
+diff --git a/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.cc b/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.cc
+index e27a6cb..0e400cf 100644
+--- a/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.cc
++++ b/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.cc
+@@ -34,8 +34,9 @@ UnixDomainServerSocket::~UnixDomainServerSocket() = default;
+ // static
+ bool UnixDomainServerSocket::GetPeerCredentials(SocketDescriptor socket,
+                                                 Credentials* credentials) {
++// Haiku has SO_PEERCRED and struct ucred, as Linux does.
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
+-    BUILDFLAG(IS_FUCHSIA)
++    BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_HAIKU)
+   struct ucred user_cred;
+   socklen_t len = sizeof(user_cred);
+   if (getsockopt(socket, SOL_SOCKET, SO_PEERCRED, &user_cred, &len) < 0)
+diff --git a/src/3rdparty/chromium/v8/src/libsampler/sampler.cc b/src/3rdparty/chromium/v8/src/libsampler/sampler.cc
+index b8875c8..383a95b 100644
+--- a/src/3rdparty/chromium/v8/src/libsampler/sampler.cc
++++ b/src/3rdparty/chromium/v8/src/libsampler/sampler.cc
+@@ -28,7 +28,8 @@
+ #include <mach/mach.h>
+ // OpenBSD doesn't have <ucontext.h>. ucontext_t lives in <signal.h>
+ // and is a typedef for struct sigcontext. There is no uc_mcontext.
+-#elif !V8_OS_OPENBSD
++// Haiku's ucontext_t is in <signal.h> too.
++#elif !V8_OS_OPENBSD && !V8_OS_HAIKU
+ #include <ucontext.h>
+ #endif
+ 

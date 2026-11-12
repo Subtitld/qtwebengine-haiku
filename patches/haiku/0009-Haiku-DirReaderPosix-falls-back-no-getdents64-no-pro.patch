@@ -1,0 +1,35 @@
+From a173e0a19b983c9e9d638ff92f87515e91d8e40a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 00:01:49 -0300
+Subject: [PATCH 09/24] Haiku: DirReaderPosix falls back (no getdents64, no
+ /proc)
+
+---
+ src/3rdparty/chromium/base/files/dir_reader_posix.h | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/3rdparty/chromium/base/files/dir_reader_posix.h b/src/3rdparty/chromium/base/files/dir_reader_posix.h
+index 4363cb7..560369c 100644
+--- a/src/3rdparty/chromium/base/files/dir_reader_posix.h
++++ b/src/3rdparty/chromium/base/files/dir_reader_posix.h
+@@ -17,7 +17,9 @@
+ // seems worse than falling back to enumerating all file descriptors so we will
+ // probably never implement this on the Mac.
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_BSD)
++// Haiku has no getdents64 and no /proc to read with it.
++#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
++     BUILDFLAG(IS_BSD)) && !BUILDFLAG(IS_HAIKU)
+ #include "base/files/dir_reader_linux.h"
+ #else
+ #include "base/files/dir_reader_fallback.h"
+@@ -25,7 +27,8 @@
+ 
+ namespace base {
+ 
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_BSD)
++#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
++     BUILDFLAG(IS_BSD)) && !BUILDFLAG(IS_HAIKU)
+ typedef DirReaderLinux DirReaderPosix;
+ #else
+ typedef DirReaderFallback DirReaderPosix;

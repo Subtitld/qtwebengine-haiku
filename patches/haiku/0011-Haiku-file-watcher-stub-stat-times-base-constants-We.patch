@@ -1,0 +1,225 @@
+From 2ae2a305f546b4f78fca65355a48f88fa85499b7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 00:48:35 -0300
+Subject: [PATCH 11/24] Haiku: file watcher stub, stat times, base/ constants,
+ WebRTC, nasm
+
+No EVFILT_VNODE on Haiku, so FilePathWatcher is the stub. File times come
+from st_mtim/st_atim/st_ctim as on Linux, and futimens stands in for
+futimes. Constants Haiku lacks or names differently: NZERO, PF_X
+(PF_EXECUTE), CLOCK_BOOTTIME (its monotonic clock), kFDDir and
+kSystemDefaultMaxFds. WebRTC gets placeholder numbers for IPV6_TCLASS and
+SO_TIMESTAMP (the calls fail and are handled) and IFF_LINK for
+IFF_RUNNING. nasm uses its own strsep.
+---
+ src/3rdparty/chromium/base/BUILD.gn           | 20 +++++++++++++------
+ .../chromium/base/debug/stack_trace_posix.cc  |  2 ++
+ .../chromium/base/files/file_posix.cc         |  5 +++--
+ .../chromium/base/posix/can_lower_nice_to.cc  |  5 +++++
+ .../chromium/base/process/launch_posix.cc     |  4 ++++
+ .../base/process/process_metrics_posix.cc     |  2 ++
+ .../base/profiler/module_cache_posix.cc       |  5 +++++
+ .../chromium/base/tracing/trace_time.cc       |  3 +++
+ .../third_party/nasm/config/config-linux.h    |  3 +++
+ .../third_party/webrtc/rtc_base/network.cc    |  5 +++++
+ .../webrtc/rtc_base/physical_socket_server.cc | 14 +++++++++++++
+ 11 files changed, 60 insertions(+), 8 deletions(-)
+
+diff --git a/src/3rdparty/chromium/base/BUILD.gn b/src/3rdparty/chromium/base/BUILD.gn
+index 4875f3b..73cf56a 100644
+--- a/src/3rdparty/chromium/base/BUILD.gn
++++ b/src/3rdparty/chromium/base/BUILD.gn
+@@ -2359,12 +2359,20 @@ jumbo_component("base") {
+       "stack_canary_linux.cc",
+       "stack_canary_linux.h",
+     ]
+-    sources += [
+-      "files/file_path_watcher_kqueue.cc",
+-      "files/file_path_watcher_kqueue.h",
+-      "files/file_path_watcher_bsd.cc",
+-      "threading/platform_thread_bsd.cc",
+-    ]
++    if (is_haiku) {
++      # Haiku's kqueue has no EVFILT_VNODE to watch files with.
++      sources += [
++        "files/file_path_watcher_stub.cc",
++        "threading/platform_thread_bsd.cc",
++      ]
++    } else {
++      sources += [
++        "files/file_path_watcher_kqueue.cc",
++        "files/file_path_watcher_kqueue.h",
++        "files/file_path_watcher_bsd.cc",
++        "threading/platform_thread_bsd.cc",
++      ]
++    }
+   }
+ 
+   if (use_blink) {
+diff --git a/src/3rdparty/chromium/base/debug/stack_trace_posix.cc b/src/3rdparty/chromium/base/debug/stack_trace_posix.cc
+index 88aff50..c77fb75 100644
+--- a/src/3rdparty/chromium/base/debug/stack_trace_posix.cc
++++ b/src/3rdparty/chromium/base/debug/stack_trace_posix.cc
+@@ -19,7 +19,9 @@
+ #include <string.h>
+ #include <sys/param.h>
+ #include <sys/stat.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ #include <sys/types.h>
+ #include <unistd.h>
+ 
+diff --git a/src/3rdparty/chromium/base/files/file_posix.cc b/src/3rdparty/chromium/base/files/file_posix.cc
+index 1863746..d643273 100644
+--- a/src/3rdparty/chromium/base/files/file_posix.cc
++++ b/src/3rdparty/chromium/base/files/file_posix.cc
+@@ -91,7 +91,7 @@ int CallFtruncate(PlatformFile file, int64_t length) {
+ }
+ 
+ int CallFutimes(PlatformFile file, const struct timeval times[2]) {
+-#ifdef __USE_XOPEN2K8
++#if defined(__USE_XOPEN2K8) || defined(__HAIKU__)
+   // futimens should be available, but futimes might not be
+   // http://pubs.opengroup.org/onlinepubs/9699919799/
+ 
+@@ -186,7 +186,8 @@ void File::Info::FromStat(const stat_wrapper_t& stat_info) {
+   // creation time. However, other than on Mac & iOS where the actual file
+   // creation time is included as st_birthtime, the rest of POSIX platforms have
+   // no portable way to get the creation time.
+-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
++#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA) || \
++    BUILDFLAG(IS_HAIKU)
+   time_t last_modified_sec = stat_info.st_mtim.tv_sec;
+   int64_t last_modified_nsec = stat_info.st_mtim.tv_nsec;
+   time_t last_accessed_sec = stat_info.st_atim.tv_sec;
+diff --git a/src/3rdparty/chromium/base/posix/can_lower_nice_to.cc b/src/3rdparty/chromium/base/posix/can_lower_nice_to.cc
+index 2b84413..05f9a3d 100644
+--- a/src/3rdparty/chromium/base/posix/can_lower_nice_to.cc
++++ b/src/3rdparty/chromium/base/posix/can_lower_nice_to.cc
+@@ -23,6 +23,11 @@
+ #define RLIMIT_NICE 20
+ #endif
+ 
++// Haiku's limits.h leaves NZERO out; POSIX says it is at least 20.
++#if !defined(NZERO)
++#define NZERO 20
++#endif
++
+ namespace base::internal {
+ 
+ bool CanLowerNiceTo(int nice_value) {
+diff --git a/src/3rdparty/chromium/base/process/launch_posix.cc b/src/3rdparty/chromium/base/process/launch_posix.cc
+index 595e579..79f2196 100644
+--- a/src/3rdparty/chromium/base/process/launch_posix.cc
++++ b/src/3rdparty/chromium/base/process/launch_posix.cc
+@@ -240,6 +240,10 @@ static const char kFDDir[] = "/proc/self/fd";
+ static const char kFDDir[] = "/dev/fd";
+ #elif BUILDFLAG(IS_FREEBSD)
+ static const char kFDDir[] = "/dev/fd";
++#elif BUILDFLAG(IS_HAIKU)
++// Haiku has no such directory: opening it fails and every descriptor up to
++// the limit is closed instead.
++static const char kFDDir[] = "/dev/fd";
+ #elif BUILDFLAG(IS_OPENBSD)
+ static const char kFDDir[] = "/dev/fd";
+ #elif BUILDFLAG(IS_ANDROID)
+diff --git a/src/3rdparty/chromium/base/process/process_metrics_posix.cc b/src/3rdparty/chromium/base/process/process_metrics_posix.cc
+index 56906b9..fe28cdb 100644
+--- a/src/3rdparty/chromium/base/process/process_metrics_posix.cc
++++ b/src/3rdparty/chromium/base/process/process_metrics_posix.cc
+@@ -52,6 +52,8 @@ static const rlim_t kSystemDefaultMaxFds = 256;
+ static const rlim_t kSystemDefaultMaxFds = 8192;
+ #elif BUILDFLAG(IS_FREEBSD)
+ static const rlim_t kSystemDefaultMaxFds = 8192;
++#elif BUILDFLAG(IS_HAIKU)
++static const rlim_t kSystemDefaultMaxFds = 1024;
+ #elif BUILDFLAG(IS_NETBSD)
+ static const rlim_t kSystemDefaultMaxFds = 1024;
+ #elif BUILDFLAG(IS_OPENBSD)
+diff --git a/src/3rdparty/chromium/base/profiler/module_cache_posix.cc b/src/3rdparty/chromium/base/profiler/module_cache_posix.cc
+index 54c48a1..498ccfa 100644
+--- a/src/3rdparty/chromium/base/profiler/module_cache_posix.cc
++++ b/src/3rdparty/chromium/base/profiler/module_cache_posix.cc
+@@ -7,6 +7,11 @@
+ #include <dlfcn.h>
+ #include <elf.h>
+ 
++#if !defined(PF_X) && defined(PF_EXECUTE)
++// Haiku's elf.h names the flag PF_EXECUTE.
++#define PF_X PF_EXECUTE
++#endif
++
+ #include <optional>
+ #include <string_view>
+ 
+diff --git a/src/3rdparty/chromium/base/tracing/trace_time.cc b/src/3rdparty/chromium/base/tracing/trace_time.cc
+index b1c86d1..f337cc1 100644
+--- a/src/3rdparty/chromium/base/tracing/trace_time.cc
++++ b/src/3rdparty/chromium/base/tracing/trace_time.cc
+@@ -10,6 +10,9 @@
+ 
+ #if BUILDFLAG(IS_FREEBSD)
+ #define CLOCK_BOOTTIME CLOCK_UPTIME
++#elif BUILDFLAG(IS_HAIKU)
++// Haiku's monotonic clock does not stop in suspend: it is boot time.
++#define CLOCK_BOOTTIME CLOCK_MONOTONIC
+ #endif
+ 
+ namespace base::tracing {
+diff --git a/src/3rdparty/chromium/third_party/nasm/config/config-linux.h b/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
+index 799ce9f..25be37a 100644
+--- a/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
++++ b/src/3rdparty/chromium/third_party/nasm/config/config-linux.h
+@@ -405,7 +405,10 @@
+ /* #undef HAVE_STRRCHRNUL */
+ 
+ /* Define to 1 if you have the `strsep' function. */
++#ifndef __HAIKU__
++/* strsep is in Haiku's libbsd, which nasm does not link: use its own. */
+ #define HAVE_STRSEP 1
++#endif
+ 
+ /* Define to 1 if the system has the type `struct stat'. */
+ #define HAVE_STRUCT_STAT 1
+diff --git a/src/3rdparty/chromium/third_party/webrtc/rtc_base/network.cc b/src/3rdparty/chromium/third_party/webrtc/rtc_base/network.cc
+index f3c84e3..985cdae 100644
+--- a/src/3rdparty/chromium/third_party/webrtc/rtc_base/network.cc
++++ b/src/3rdparty/chromium/third_party/webrtc/rtc_base/network.cc
+@@ -10,6 +10,11 @@
+ 
+ #include "rtc_base/network.h"
+ 
++#if defined(__HAIKU__) && !defined(IFF_RUNNING)
++// Haiku calls an interface with a link IFF_LINK.
++#define IFF_RUNNING IFF_LINK
++#endif
++
+ #include "absl/strings/string_view.h"
+ #include "rtc_base/experiments/field_trial_parser.h"
+ 
+diff --git a/src/3rdparty/chromium/third_party/webrtc/rtc_base/physical_socket_server.cc b/src/3rdparty/chromium/third_party/webrtc/rtc_base/physical_socket_server.cc
+index 9cd445c..07cf371 100644
+--- a/src/3rdparty/chromium/third_party/webrtc/rtc_base/physical_socket_server.cc
++++ b/src/3rdparty/chromium/third_party/webrtc/rtc_base/physical_socket_server.cc
+@@ -9,6 +9,20 @@
+  */
+ #include "rtc_base/physical_socket_server.h"
+ 
++#if defined(__HAIKU__)
++// Haiku has none of these options. Numbers it does not know make
++// setsockopt()/getsockopt() fail, which the code below already handles.
++#ifndef IPV6_TCLASS
++#define IPV6_TCLASS 0x7f01
++#endif
++#ifndef SO_TIMESTAMP
++#define SO_TIMESTAMP 0x7f02
++#endif
++#ifndef SCM_TIMESTAMP
++#define SCM_TIMESTAMP SO_TIMESTAMP
++#endif
++#endif
++
+ #include <cstdint>
+ #include <cstring>
+ #include <utility>

@@ -1,0 +1,26 @@
+From 98a9e2d238c439d33ecd320a6e6a0ceffa5dedc8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 03:50:17 -0300
+Subject: [PATCH 20/24] Haiku: drive metrics without major()/minor()
+
+---
+ .../components/metrics/drive_metrics_provider_linux.cc      | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/components/metrics/drive_metrics_provider_linux.cc b/src/3rdparty/chromium/components/metrics/drive_metrics_provider_linux.cc
+index 2907f15..d9ff1cf 100644
+--- a/src/3rdparty/chromium/components/metrics/drive_metrics_provider_linux.cc
++++ b/src/3rdparty/chromium/components/metrics/drive_metrics_provider_linux.cc
+@@ -4,7 +4,11 @@
+ 
+ #include "components/metrics/drive_metrics_provider.h"
+ 
+-#if BUILDFLAG(IS_BSD)
++#if defined(__HAIKU__)
++// Haiku has no major/minor device numbers; no SCSI disk will match below.
++#define MAJOR(dev) (static_cast<unsigned>(dev) >> 8)
++#define MINOR(dev) (static_cast<unsigned>(dev) & 0xff)
++#elif BUILDFLAG(IS_BSD)
+ #include <sys/types.h>
+ #define MAJOR(dev) major(dev)
+ #define MINOR(dev) minor(dev)

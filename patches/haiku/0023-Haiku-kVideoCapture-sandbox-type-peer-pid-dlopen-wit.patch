@@ -1,0 +1,56 @@
+From d1f8c87fb64138b2d1b717490fd69e722e873cd2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 04:38:46 -0300
+Subject: [PATCH 23/24] Haiku: kVideoCapture sandbox type, peer pid, dlopen
+ without NODELETE
+
+---
+ .../chromium/net/socket/unix_domain_server_socket_posix.h    | 2 +-
+ src/3rdparty/chromium/sandbox/policy/mojom/sandbox.mojom     | 3 +++
+ .../video_effects/video_effects_sandbox_hook_linux.cc        | 5 +++++
+ 3 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.h b/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.h
+index 2f3ef75..e5a48e3 100644
+--- a/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.h
++++ b/src/3rdparty/chromium/net/socket/unix_domain_server_socket_posix.h
+@@ -30,7 +30,7 @@ class NET_EXPORT UnixDomainServerSocket : public ServerSocket {
+   // Credentials of a peer process connected to the socket.
+   struct NET_EXPORT Credentials {
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
+-    BUILDFLAG(IS_FUCHSIA)
++    BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_HAIKU)
+     // Linux and Fuchsia provide more information about the connected peer
+     // than Windows/OS X. It's useful for permission-based authorization on
+     // Android.
+diff --git a/src/3rdparty/chromium/sandbox/policy/mojom/sandbox.mojom b/src/3rdparty/chromium/sandbox/policy/mojom/sandbox.mojom
+index a02b7f9..123a6f2 100644
+--- a/src/3rdparty/chromium/sandbox/policy/mojom/sandbox.mojom
++++ b/src/3rdparty/chromium/sandbox/policy/mojom/sandbox.mojom
+@@ -80,6 +80,9 @@ enum Sandbox {
+   [EnableIf=is_freebsd]
+   kVideoCapture,
+ 
++  [EnableIf=is_haiku]
++  kVideoCapture,
++
+   // Allows access to file contents and Windows APIs for parsing icons from PE
+   // files.
+   [EnableIf=is_win] kIconReader,
+diff --git a/src/3rdparty/chromium/services/video_effects/video_effects_sandbox_hook_linux.cc b/src/3rdparty/chromium/services/video_effects/video_effects_sandbox_hook_linux.cc
+index 5f6318f..882c65d 100644
+--- a/src/3rdparty/chromium/services/video_effects/video_effects_sandbox_hook_linux.cc
++++ b/src/3rdparty/chromium/services/video_effects/video_effects_sandbox_hook_linux.cc
+@@ -24,7 +24,12 @@ bool VideoEffectsPreSandboxHook(
+   const auto path = ml::GetChromeMLPath();
+   // We don't want to unload the library so not using `ChromeMLHolder` here.
+   void* ml =
++#if defined(RTLD_NODELETE)
+       dlopen(path.value().c_str(), RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
++#else
++      // Haiku has no RTLD_NODELETE; the handle is never closed anyway.
++      dlopen(path.value().c_str(), RTLD_NOW | RTLD_GLOBAL);
++#endif
+   if (!ml) {
+     // The library may be missing on developer builds, we should tolerate that.
+     // The features in Video Effects Service that require the library will not

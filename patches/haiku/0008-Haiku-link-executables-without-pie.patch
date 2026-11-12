@@ -1,0 +1,47 @@
+From cd9b558c8e338e5650b120f58175cd40392f392b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Wed, 11 Nov 2026 23:54:58 -0300
+Subject: [PATCH 08/24] Haiku: link executables without -pie
+
+Haiku's runtime_loader fails on the R_X86_64_TPOFF64 relocations a PIE
+gets for libstdc++'s std::__once_call/__once_callable (std::call_once):
+every C++ host tool (protoc and its plugins) failed to start with "Bad
+data". A non-PIE executable with the same relocations loads fine.
+---
+ src/3rdparty/chromium/build/config/gcc/BUILD.gn | 9 ++++++++-
+ src/3rdparty/chromium/v8/gni/v8.gni             | 2 +-
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/3rdparty/chromium/build/config/gcc/BUILD.gn b/src/3rdparty/chromium/build/config/gcc/BUILD.gn
+index fe5273b..01c1332 100644
+--- a/src/3rdparty/chromium/build/config/gcc/BUILD.gn
++++ b/src/3rdparty/chromium/build/config/gcc/BUILD.gn
+@@ -95,7 +95,14 @@ if (is_component_build && !is_android) {
+ # Settings for executables.
+ config("executable_config") {
+   configs = executable_and_shared_library_configs_
+-  ldflags = [ "-pie" ]
++
++  # Haiku's runtime_loader cannot apply the initial-exec TLS relocations
++  # (R_X86_64_TPOFF64 against libstdc++'s std::__once_call) that a PIE gets.
++  if (!is_haiku) {
++    ldflags = [ "-pie" ]
++  } else {
++    ldflags = []
++  }
+   if (is_android) {
+     ldflags += [
+       "-Bdynamic",
+diff --git a/src/3rdparty/chromium/v8/gni/v8.gni b/src/3rdparty/chromium/v8/gni/v8.gni
+index 6428021..c0e14d6 100644
+--- a/src/3rdparty/chromium/v8/gni/v8.gni
++++ b/src/3rdparty/chromium/v8/gni/v8.gni
+@@ -392,7 +392,7 @@ template("v8_executable") {
+         configs -= invoker.remove_configs
+       }
+       configs += invoker.configs
+-      if (is_linux || is_chromeos) {
++      if ((is_linux || is_chromeos) && !is_haiku) {
+         # For enabling ASLR.
+         ldflags = [ "-pie" ]
+       }

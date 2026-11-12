@@ -1,0 +1,464 @@
+From 9821f012ff27c8e2c4e3a1ed164ccca658cb64c7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 00:15:50 -0300
+Subject: [PATCH 10/24] Haiku: message pump on poll(), base/ OS calls, WebRTC,
+ net
+
+MessagePumpEpoll already keeps a poll() list beside its epoll set; Haiku,
+which has no epoll or eventfd, always waits with poll() (epoll_haiku.h
+gives the types and inert calls) and wakes through a pipe. base/:
+random bytes from arc4random_buf (libbsd), stack bases and the debugger
+check from get_thread_info/get_team_info, FILE_EXE from the app image,
+no setproctitle, no sysctl, no syscall.h. WebRTC and the DNS address
+sorter skip BSD headers Haiku lacks (sys/endian.h, in6_var.h).
+---
+ src/3rdparty/chromium/base/BUILD.gn           |  8 ++-
+ .../chromium/base/base_paths_posix.cc         | 16 +++++-
+ .../chromium/base/debug/debugger_posix.cc     | 18 +++++-
+ src/3rdparty/chromium/base/linux_util.cc      |  1 +
+ .../chromium/base/message_loop/epoll_haiku.h  | 56 +++++++++++++++++++
+ .../base/message_loop/message_pump_epoll.cc   | 34 ++++++++++-
+ .../base/message_loop/message_pump_epoll.h    | 13 +++++
+ .../chromium/base/process/launch_posix.cc     |  2 +
+ .../base/process/set_process_title.cc         |  4 +-
+ .../base/profiler/stack_base_address_posix.cc | 15 ++++-
+ src/3rdparty/chromium/base/rand_util_posix.cc |  2 +
+ .../chromium/net/dns/address_sorter_posix.cc  |  6 +-
+ .../third_party/webrtc/rtc_base/byte_order.h  |  2 +-
+ .../webrtc/rtc_base/platform_thread_types.cc  |  2 +
+ 14 files changed, 169 insertions(+), 10 deletions(-)
+ create mode 100644 src/3rdparty/chromium/base/message_loop/epoll_haiku.h
+
+diff --git a/src/3rdparty/chromium/base/BUILD.gn b/src/3rdparty/chromium/base/BUILD.gn
+index c6578dc..4875f3b 100644
+--- a/src/3rdparty/chromium/base/BUILD.gn
++++ b/src/3rdparty/chromium/base/BUILD.gn
+@@ -2182,7 +2182,10 @@ jumbo_component("base") {
+       "process/process_metrics_haiku.cc",
+       "system/sys_info_haiku.cc",
+     ]
+-    libs += [ "execinfo" ]
++    libs += [
++      "bsd",
++      "execinfo",
++    ]
+   } else if (is_freebsd) {
+     sources += [
+       "process/process_handle_freebsd.cc",
+@@ -2378,6 +2381,9 @@ jumbo_component("base") {
+       "message_loop/message_pump_epoll.cc",
+       "message_loop/message_pump_epoll.h",
+     ]
++    if (is_haiku) {
++      sources += [ "message_loop/epoll_haiku.h" ]
++    }
+   }
+ 
+   # Android and MacOS have their own custom shared memory handle
+diff --git a/src/3rdparty/chromium/base/base_paths_posix.cc b/src/3rdparty/chromium/base/base_paths_posix.cc
+index bff1751..2e0cc43 100644
+--- a/src/3rdparty/chromium/base/base_paths_posix.cc
++++ b/src/3rdparty/chromium/base/base_paths_posix.cc
+@@ -23,11 +23,15 @@
+ #include "base/nix/xdg_util.h"
+ #include "base/notreached.h"
+ #include "base/path_service.h"
++#if !defined(__HAIKU__)
+ #include "base/posix/sysctl.h"
++#endif
+ #include "base/process/process_metrics.h"
+ #include "build/build_config.h"
+ 
+-#if BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++#include <image.h>
++#elif BUILDFLAG(IS_BSD)
+ #include <sys/param.h>
+ #include <sys/sysctl.h>
+ #if BUILDFLAG(IS_OPENBSD)
+@@ -51,6 +55,16 @@ bool PathProviderPosix(int key, FilePath* result) {
+       }
+       *result = bin_dir;
+       return true;
++#elif BUILDFLAG(IS_HAIKU)
++      image_info info;
++      int32 cookie = 0;
++      while (get_next_image_info(B_CURRENT_TEAM, &cookie, &info) == B_OK) {
++        if (info.type == B_APP_IMAGE) {
++          *result = FilePath(info.name);
++          return true;
++        }
++      }
++      NOTREACHED() << "Unable to find the app image.";
+ #elif BUILDFLAG(IS_FREEBSD)
+       std::optional<std::string> bin_dir = StringSysctl({ CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 });
+       if (!bin_dir.has_value() || bin_dir.value().length() <= 1) {
+diff --git a/src/3rdparty/chromium/base/debug/debugger_posix.cc b/src/3rdparty/chromium/base/debug/debugger_posix.cc
+index 7bdf664..a17c969 100644
+--- a/src/3rdparty/chromium/base/debug/debugger_posix.cc
++++ b/src/3rdparty/chromium/base/debug/debugger_posix.cc
+@@ -37,7 +37,9 @@
+ #include <AvailabilityMacros.h>
+ #endif
+ 
+-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++#include <OS.h>
++#elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_BSD)
+ #include <sys/sysctl.h>
+ #endif
+ 
+@@ -66,7 +68,19 @@
+ 
+ namespace base::debug {
+ 
+-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++
++// A team being debugged has a debugger nub thread. get_team_info() is a
++// plain syscall, so this stays async-signal safe.
++bool BeingDebugged() {
++  team_info info;
++  return get_team_info(B_CURRENT_TEAM, &info) == B_OK &&
++         info.debugger_nub_thread >= 0;
++}
++
++void VerifyDebugger() {}
++
++#elif BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_BSD)
+ 
+ // Based on Apple's recommended method as described in
+ // http://developer.apple.com/qa/qa2004/qa1361.html
+diff --git a/src/3rdparty/chromium/base/linux_util.cc b/src/3rdparty/chromium/base/linux_util.cc
+index d1a9308..6c4baf5 100644
+--- a/src/3rdparty/chromium/base/linux_util.cc
++++ b/src/3rdparty/chromium/base/linux_util.cc
+@@ -26,6 +26,7 @@
+ #include "base/files/dir_reader_posix.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_file.h"
++#include "base/logging.h"
+ #include "base/strings/safe_sprintf.h"
+ #include "base/strings/span_printf.h"
+ #include "base/strings/string_number_conversions.h"
+diff --git a/src/3rdparty/chromium/base/message_loop/epoll_haiku.h b/src/3rdparty/chromium/base/message_loop/epoll_haiku.h
+new file mode 100644
+index 0000000..f622de9
+--- /dev/null
++++ b/src/3rdparty/chromium/base/message_loop/epoll_haiku.h
+@@ -0,0 +1,56 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_MESSAGE_LOOP_EPOLL_HAIKU_H_
++#define BASE_MESSAGE_LOOP_EPOLL_HAIKU_H_
++
++// Haiku has no epoll. MessagePumpEpoll keeps a poll() list next to its epoll
++// interest list and always waits with poll() on Haiku, so the epoll calls it
++// still makes only need to succeed; nothing waits on them.
++
++#include <errno.h>
++#include <fcntl.h>
++#include <stdint.h>
++#include <unistd.h>
++
++typedef union epoll_data {
++  void* ptr;
++  int fd;
++  uint32_t u32;
++  uint64_t u64;
++} epoll_data_t;
++
++struct epoll_event {
++  uint32_t events;
++  epoll_data_t data;
++};
++
++#define EPOLLIN 0x001
++#define EPOLLPRI 0x002
++#define EPOLLOUT 0x004
++#define EPOLLERR 0x008
++#define EPOLLHUP 0x010
++#define EPOLLONESHOT (1u << 30)
++
++#define EPOLL_CTL_ADD 1
++#define EPOLL_CTL_DEL 2
++#define EPOLL_CTL_MOD 3
++
++// A real descriptor, so that ScopedFD owns and closes something.
++inline int epoll_create1(int /*flags*/) {
++  return open("/dev/null", O_RDONLY | O_CLOEXEC);
++}
++
++inline int epoll_ctl(int /*epfd*/, int /*op*/, int /*fd*/,
++                     struct epoll_event* /*event*/) {
++  return 0;
++}
++
++inline int epoll_wait(int /*epfd*/, struct epoll_event* /*events*/,
++                      int /*maxevents*/, int /*timeout*/) {
++  errno = ENOSYS;
++  return -1;
++}
++
++#endif  // BASE_MESSAGE_LOOP_EPOLL_HAIKU_H_
+diff --git a/src/3rdparty/chromium/base/message_loop/message_pump_epoll.cc b/src/3rdparty/chromium/base/message_loop/message_pump_epoll.cc
+index 0bb5eff..81a31ca 100644
+--- a/src/3rdparty/chromium/base/message_loop/message_pump_epoll.cc
++++ b/src/3rdparty/chromium/base/message_loop/message_pump_epoll.cc
+@@ -9,7 +9,13 @@
+ 
+ #include "base/message_loop/message_pump_epoll.h"
+ 
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HAIKU)
++#include <fcntl.h>
++#else
+ #include <sys/eventfd.h>
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -144,7 +150,18 @@ MessagePumpEpoll::MessagePumpEpoll() {
+   epoll_.reset(epoll_create1(/*flags=*/0));
+   PCHECK(epoll_.is_valid());
+ 
++#if BUILDFLAG(IS_HAIKU)
++  int wake_pipe[2];
++  PCHECK(pipe(wake_pipe) == 0);
++  for (int fd : wake_pipe) {
++    PCHECK(fcntl(fd, F_SETFL, O_NONBLOCK) == 0);
++    PCHECK(fcntl(fd, F_SETFD, FD_CLOEXEC) == 0);
++  }
++  wake_event_.reset(wake_pipe[0]);
++  wake_write_.reset(wake_pipe[1]);
++#else
+   wake_event_.reset(eventfd(0, EFD_NONBLOCK));
++#endif
+   PCHECK(wake_event_.is_valid());
+ 
+   epoll_event wake{.events = EPOLLIN, .data = {.ptr = &wake_event_}};
+@@ -306,7 +323,12 @@ void MessagePumpEpoll::Quit() {
+ 
+ void MessagePumpEpoll::ScheduleWork() {
+   const uint64_t value = 1;
++#if BUILDFLAG(IS_HAIKU)
++  // A full pipe (EAGAIN) is as good as a write: the reader will wake up.
++  ssize_t n = HANDLE_EINTR(write(wake_write_.get(), &value, sizeof(value)));
++#else
+   ssize_t n = HANDLE_EINTR(write(wake_event_.get(), &value, sizeof(value)));
++#endif
+ 
+   // EAGAIN here implies that the write() would overflow of the event counter,
+   // which is a condition we can safely ignore. It implies that the event
+@@ -459,8 +481,10 @@ bool MessagePumpEpoll::WaitForEpollEvents(TimeDelta timeout) {
+   // to iterate through the list of watched fds. This value is pretty arbitrary,
+   // the internet suggests that under 1000 fds that epoll isn't noticeably
+   // faster than poll but this isn't easy to empirically measure.
++  // Haiku has no epoll: poll() is the only way to wait there.
+   bool use_poll =
+-      g_use_poll.load(std::memory_order_relaxed) && entries_.size() < 500;
++      BUILDFLAG(IS_HAIKU) ||
++      (g_use_poll.load(std::memory_order_relaxed) && entries_.size() < 500);
+ 
+   if (use_poll) {
+     if (!GetEventsPoll(epoll_timeout, &poll_events)) {
+@@ -676,9 +700,17 @@ void MessagePumpEpoll::HandleEvent(int fd,
+ void MessagePumpEpoll::HandleWakeUp() {
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   BeginNativeWorkBatch();
++#if BUILDFLAG(IS_HAIKU)
++  // Unlike an eventfd, the pipe holds one word per wake-up: drain them all.
++  uint64_t values[64];
++  while (HANDLE_EINTR(read(wake_event_.get(), values, sizeof(values))) ==
++         static_cast<ssize_t>(sizeof(values))) {
++  }
++#else
+   uint64_t value;
+   ssize_t n = HANDLE_EINTR(read(wake_event_.get(), &value, sizeof(value)));
+   DPCHECK(n == sizeof(value));
++#endif
+ }
+ 
+ void MessagePumpEpoll::BeginNativeWorkBatch() {
+diff --git a/src/3rdparty/chromium/base/message_loop/message_pump_epoll.h b/src/3rdparty/chromium/base/message_loop/message_pump_epoll.h
+index 83bc592..87f1e0c 100644
+--- a/src/3rdparty/chromium/base/message_loop/message_pump_epoll.h
++++ b/src/3rdparty/chromium/base/message_loop/message_pump_epoll.h
+@@ -6,7 +6,14 @@
+ #define BASE_MESSAGE_LOOP_MESSAGE_PUMP_EPOLL_H_
+ 
+ #include <poll.h>
++
++#include "build/build_config.h"
++
++#if BUILDFLAG(IS_HAIKU)
++#include "base/message_loop/epoll_haiku.h"
++#else
+ #include <sys/epoll.h>
++#endif
+ 
+ #include <cstdint>
+ #include <map>
+@@ -267,8 +274,14 @@ class BASE_EXPORT MessagePumpEpoll : public MessagePump,
+   ScopedFD epoll_;
+ 
+   // An eventfd object used to wake the pump's thread when scheduling new work.
++  // On Haiku, which has no eventfd, the read end of a pipe.
+   ScopedFD wake_event_;
+ 
++#if BUILDFLAG(IS_HAIKU)
++  // The write end of that pipe.
++  ScopedFD wake_write_;
++#endif
++
+   // Tracks when we should next record periodic metrics.
+   base::TimeTicks next_metrics_time_;
+ 
+diff --git a/src/3rdparty/chromium/base/process/launch_posix.cc b/src/3rdparty/chromium/base/process/launch_posix.cc
+index 43e6b35..595e579 100644
+--- a/src/3rdparty/chromium/base/process/launch_posix.cc
++++ b/src/3rdparty/chromium/base/process/launch_posix.cc
+@@ -19,7 +19,9 @@
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <sys/resource.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+diff --git a/src/3rdparty/chromium/base/process/set_process_title.cc b/src/3rdparty/chromium/base/process/set_process_title.cc
+index edd8c78..37a02f4 100644
+--- a/src/3rdparty/chromium/base/process/set_process_title.cc
++++ b/src/3rdparty/chromium/base/process/set_process_title.cc
+@@ -43,8 +43,10 @@
+ namespace base {
+ 
+ // TODO(jrg): Find out if setproctitle or equivalent is available on Android.
++// Haiku has no setproctitle().
+ #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_SOLARIS) && \
+-    !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_NACL)
++    !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_NACL) && \
++    !BUILDFLAG(IS_HAIKU)
+ 
+ void SetProcessTitleFromCommandLine(const char** main_argv) {
+   // Build a single string which consists of all the arguments separated
+diff --git a/src/3rdparty/chromium/base/profiler/stack_base_address_posix.cc b/src/3rdparty/chromium/base/profiler/stack_base_address_posix.cc
+index adcc6f8..d47dfc3 100644
+--- a/src/3rdparty/chromium/base/profiler/stack_base_address_posix.cc
++++ b/src/3rdparty/chromium/base/profiler/stack_base_address_posix.cc
+@@ -17,7 +17,9 @@
+ #include "base/files/scoped_file.h"
+ #endif
+ 
+-#if BUILDFLAG(IS_BSD)
++#if BUILDFLAG(IS_HAIKU)
++#include <OS.h>
++#elif BUILDFLAG(IS_BSD)
+ #include <pthread_np.h>
+ #endif
+ 
+@@ -51,7 +53,14 @@ std::optional<uintptr_t> GetAndroidMainThreadStackBaseAddressImpl() {
+ 
+ #if !BUILDFLAG(IS_LINUX)
+ uintptr_t GetThreadStackBaseAddressImpl(pthread_t pthread_id) {
+-#if BUILDFLAG(IS_OPENBSD)
++#if BUILDFLAG(IS_HAIKU)
++  thread_info info;
++  if (get_thread_info(get_pthread_thread_id(pthread_id), &info) != B_OK) {
++    return 0;
++  }
++  // Stacks grow down: the base is the highest address.
++  return reinterpret_cast<uintptr_t>(info.stack_end);
++#elif BUILDFLAG(IS_OPENBSD)
+   stack_t ss;
+   void *address;
+   size_t size;
+@@ -86,8 +95,10 @@ uintptr_t GetThreadStackBaseAddressImpl(pthread_t pthread_id) {
+                       << logging::SystemErrorCodeToString(result);
+   pthread_attr_destroy(&attr);
+ #endif
++#if !BUILDFLAG(IS_HAIKU)
+   const uintptr_t base_address = reinterpret_cast<uintptr_t>(address) + size;
+   return base_address;
++#endif
+ }
+ #endif  // !BUILDFLAG(IS_LINUX)
+ 
+diff --git a/src/3rdparty/chromium/base/rand_util_posix.cc b/src/3rdparty/chromium/base/rand_util_posix.cc
+index 4f00144..7c2d074 100644
+--- a/src/3rdparty/chromium/base/rand_util_posix.cc
++++ b/src/3rdparty/chromium/base/rand_util_posix.cc
+@@ -13,7 +13,9 @@
+ #include <fcntl.h>
+ #include <stddef.h>
+ #include <stdint.h>
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
++#endif
+ #include <sys/utsname.h>
+ #include <unistd.h>
+ 
+diff --git a/src/3rdparty/chromium/net/dns/address_sorter_posix.cc b/src/3rdparty/chromium/net/dns/address_sorter_posix.cc
+index 41448b5..5cee5b3 100644
+--- a/src/3rdparty/chromium/net/dns/address_sorter_posix.cc
++++ b/src/3rdparty/chromium/net/dns/address_sorter_posix.cc
+@@ -24,7 +24,9 @@
+ #include <net/if.h>
+ #include <string.h>
+ #include <sys/ioctl.h>
+-#if BUILDFLAG(IS_IOS)
++#if BUILDFLAG(IS_HAIKU)
++// Haiku has no in6_ifreq/SIOCGIFAFLAG_IN6 to read address flags with.
++#elif BUILDFLAG(IS_IOS)
+ // The code in the following header file is copied from [1]. This file has the
+ // minimum definitions needed to retrieve the IP attributes, since iOS SDK
+ // doesn't include a necessary header <netinet/in_var.h>.
+@@ -442,6 +444,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
+     SourceAddressInfo& info = source_map_[src.address()];
+     // Note: no known way to fill in |native| and |home|.
+     info.native = info.home = info.deprecated = false;
++#if !BUILDFLAG(IS_HAIKU)
+     if (ifa->ifa_addr->sa_family == AF_INET6) {
+       struct in6_ifreq ifr = {};
+       strncpy(ifr.ifr_name, ifa->ifa_name, sizeof(ifr.ifr_name) - 1);
+@@ -454,6 +457,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
+         LOG(WARNING) << "SIOCGIFAFLAG_IN6 failed " << rv;
+       }
+     }
++#endif  // !BUILDFLAG(IS_HAIKU)
+     if (ifa->ifa_netmask) {
+       IPEndPoint netmask;
+       if (netmask.FromSockAddr(ifa->ifa_netmask, ifa->ifa_addr->sa_len)) {
+diff --git a/src/3rdparty/chromium/third_party/webrtc/rtc_base/byte_order.h b/src/3rdparty/chromium/third_party/webrtc/rtc_base/byte_order.h
+index 99e5b02..f2fc3e4 100644
+--- a/src/3rdparty/chromium/third_party/webrtc/rtc_base/byte_order.h
++++ b/src/3rdparty/chromium/third_party/webrtc/rtc_base/byte_order.h
+@@ -90,7 +90,7 @@
+ #error WEBRTC_ARCH_BIG_ENDIAN or WEBRTC_ARCH_LITTLE_ENDIAN must be defined.
+ #endif  // defined(WEBRTC_ARCH_LITTLE_ENDIAN)
+ 
+-#elif defined(WEBRTC_BSD)
++#elif defined(WEBRTC_BSD) && !defined(__HAIKU__)
+ #include <sys/endian.h>
+ #elif defined(WEBRTC_POSIX)
+ #include <endian.h>
+diff --git a/src/3rdparty/chromium/third_party/webrtc/rtc_base/platform_thread_types.cc b/src/3rdparty/chromium/third_party/webrtc/rtc_base/platform_thread_types.cc
+index f15842f..497f91f 100644
+--- a/src/3rdparty/chromium/third_party/webrtc/rtc_base/platform_thread_types.cc
++++ b/src/3rdparty/chromium/third_party/webrtc/rtc_base/platform_thread_types.cc
+@@ -14,8 +14,10 @@
+ #if !defined(WEBRTC_BSD)
+ #include <sys/prctl.h>
+ #endif
++#if !defined(__HAIKU__)
+ #include <sys/syscall.h>
+ #endif
++#endif
+ 
+ #if defined(WEBRTC_WIN)
+ #include "rtc_base/arraysize.h"

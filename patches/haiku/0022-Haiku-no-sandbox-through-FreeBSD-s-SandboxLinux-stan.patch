@@ -1,0 +1,48 @@
+From 0053dfff98b1a0bbfa63cd07a878894566554305 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Thu, 12 Nov 2026 04:25:30 -0300
+Subject: [PATCH 22/24] Haiku: no sandbox, through FreeBSD's SandboxLinux
+ stand-in
+
+sandbox/policy builds freebsd/sandbox_freebsd.cc on Haiku too (without
+its //ui/gfx/x dependency): a SandboxLinux that only tracks state, as
+Haiku has nothing to sandbox processes with.
+---
+ src/3rdparty/chromium/sandbox/policy/BUILD.gn  | 10 ++++++++++
+ src/3rdparty/chromium/sandbox/policy/sandbox.h |  2 +-
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/sandbox/policy/BUILD.gn b/src/3rdparty/chromium/sandbox/policy/BUILD.gn
+index cda1360..2f32721 100644
+--- a/src/3rdparty/chromium/sandbox/policy/BUILD.gn
++++ b/src/3rdparty/chromium/sandbox/policy/BUILD.gn
+@@ -137,6 +137,16 @@ component("policy") {
+       "//ui/gfx/x",
+     ]
+   }
++
++  # Haiku has no sandbox either; it takes FreeBSD's SandboxLinux, which only
++  # tracks state, without its X11 dependency.
++  if (is_haiku) {
++    sources += [
++      "freebsd/sandbox_freebsd.cc",
++      "freebsd/sandbox_freebsd.h",
++    ]
++    deps += [ "//sandbox:sandbox_buildflags" ]
++  }
+   if (is_chromeos_ash) {
+     sources += [
+       "linux/bpf_ime_policy_linux.cc",
+diff --git a/src/3rdparty/chromium/sandbox/policy/sandbox.h b/src/3rdparty/chromium/sandbox/policy/sandbox.h
+index 44f331a..26cf692 100644
+--- a/src/3rdparty/chromium/sandbox/policy/sandbox.h
++++ b/src/3rdparty/chromium/sandbox/policy/sandbox.h
+@@ -14,7 +14,7 @@
+ 
+ #if BUILDFLAG(IS_OPENBSD)
+ #include "sandbox/policy/openbsd/sandbox_openbsd.h"
+-#elif BUILDFLAG(IS_FREEBSD)
++#elif BUILDFLAG(IS_FREEBSD) || BUILDFLAG(IS_HAIKU)
+ #include "sandbox/policy/freebsd/sandbox_freebsd.h"
+ #endif
+ 
