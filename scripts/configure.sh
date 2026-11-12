@@ -2,7 +2,7 @@
 # Configure QtWebEngine for Haiku in /build/out: widgets only, offscreen
 # software rendering is all Subtitld needs, so everything optional is off.
 mkdir -p /build/out && cd /build/out && rm -rf CMakeCache.txt CMakeFiles
-export NINJAFLAGS="-j2 -k 0"
+export NINJAFLAGS="-j1 -k 0"
 cmake -G Ninja /build/src/qtwebengine-everywhere-src-6.10.3 \
   -DCMAKE_PREFIX_PATH=/boot/system \
   -DCMAKE_INSTALL_PREFIX=/build/install \

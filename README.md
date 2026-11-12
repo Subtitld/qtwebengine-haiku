@@ -98,7 +98,8 @@ file, and when Haiku runs short of physical pages (its kernel logs
 "low resource pages: critical") it freezes rather than slowing down. What
 keeps a 10 GB VM going:
 
-- no jumbo build, 2 jobs (some files need several GB each);
+- no jumbo build, 1 job: some content/browser files need about 4 GB of
+  GCC each, so even 2 overrun 8 GB;
 - `scripts/gccwrap-setup.sh` builds `/build/gcc-wrap`, a `GCC_EXEC_PREFIX`
   whose `cc1`/`cc1plus` run GCC with `--param ggc-min-expand=20
   --param ggc-min-heapsize=131072` (it collects garbage early); `build.sh`

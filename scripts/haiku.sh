@@ -27,7 +27,7 @@ boot)
     ;;
 stop)
     running || { echo "not running"; exit 0; }
-    "$HERE/ssh.sh" 'sync; shutdown -q' >/dev/null 2>&1 || true
+    timeout 60 "$HERE/ssh.sh" 'sync; shutdown -q' >/dev/null 2>&1 || true
     for _ in $(seq 180); do running || { echo "stopped"; exit 0; }; sleep 1; done
     echo "still running after 3 minutes: shut it down from its screen (Deskbar, Shut down)"; exit 1
     ;;
