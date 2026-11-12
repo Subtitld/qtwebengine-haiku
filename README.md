@@ -102,5 +102,5 @@ page itself to a standstill.
 ## Licence
 
 The patches here are under the licences of the files they change (Qt's
-LGPL/GPL for QtWebEngine, BSD for Chromium). The licence of the scripts is
-not chosen yet.
+LGPL/GPL for QtWebEngine, BSD for Chromium). The scripts are under the
+BSD 3-clause licence (`scripts/LICENSE`).
