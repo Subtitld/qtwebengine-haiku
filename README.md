@@ -94,8 +94,17 @@ git tree and syncs changes into the VM.
 debugger land there.
 
 Memory decides how many jobs Haiku can take: GCC needs 1–3 GB per Blink
-file. With a 10 GB VM, 4 jobs and no jumbo build is stable; more made Haiku
-page itself to a standstill.
+file, and when Haiku runs short of physical pages (its kernel logs
+"low resource pages: critical") it freezes rather than slowing down. What
+keeps a 10 GB VM going:
+
+- no jumbo build, 3 jobs;
+- `scripts/gccwrap-setup.sh` builds `/build/gcc-wrap`, a `GCC_EXEC_PREFIX`
+  whose `cc1`/`cc1plus` run GCC with `--param ggc-min-expand=20
+  --param ggc-min-heapsize=131072` (it collects garbage early); `build.sh`
+  exports it. Compile commands stay the same, so nothing is rebuilt;
+- `scripts/memguard.py`, run in the VM, follows the kernel's low-resource
+  state in the syslog and pauses the newest compiler while it is critical.
 
 ## Prior work
 
