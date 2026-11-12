@@ -2,8 +2,8 @@
 """Keep Haiku out of the page-starved freeze during the build.
 
 Haiku logs its low-resource state for pages ("low resource pages: X -> Y")
-to the syslog. While the state is critical, pause (SIGSTOP) the newest
-compiler; once it has been normal for 30 s, resume the oldest paused one.
+to the syslog. While the state is note or critical, pause (SIGSTOP) the
+newest compiler; once it has been normal for 30 s, resume the oldest paused one.
 At least one compiler always keeps running. Logs to /build/memguard.log.
 """
 import os
@@ -64,11 +64,13 @@ def main():
 
         paused = [t for t in paused if t in compilers()]
         running = [t for t in compilers() if t not in paused]
-        if state == 'critical' and len(running) > 1:
+        # A paused compiler keeps its memory: act at the warning level
+        # (note), before the kernel is critical, not after.
+        if state in ('note', 'critical') and len(running) > 1:
             team = running[-1]
             os.kill(team, signal.SIGSTOP)
             paused.append(team)
-            log(f'critical: paused {team} ({len(running) - 1} running)')
+            log(f'{state}: paused {team} ({len(running) - 1} running)')
         elif (state == 'normal' and paused
               and time.time() - normal_since > 30):
             team = paused.pop(0)

@@ -98,7 +98,7 @@ file, and when Haiku runs short of physical pages (its kernel logs
 "low resource pages: critical") it freezes rather than slowing down. What
 keeps a 10 GB VM going:
 
-- no jumbo build, 3 jobs;
+- no jumbo build, 2 jobs (some files need several GB each);
 - `scripts/gccwrap-setup.sh` builds `/build/gcc-wrap`, a `GCC_EXEC_PREFIX`
   whose `cc1`/`cc1plus` run GCC with `--param ggc-min-expand=20
   --param ggc-min-heapsize=131072` (it collects garbage early); `build.sh`
@@ -107,7 +107,9 @@ keeps a 10 GB VM going:
   `last_modified`): they serve only file queries, cost a write per file,
   and a damaged one made every write to the disk hang;
 - `scripts/memguard.py`, run in the VM, follows the kernel's low-resource
-  state in the syslog and pauses the newest compiler while it is critical.
+  state in the syslog and pauses the newest compiler from the warning level
+  ("note") on: a paused compiler keeps its memory, so waiting for
+  "critical" is too late.
 
 ## Prior work
 
