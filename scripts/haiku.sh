@@ -20,6 +20,7 @@ boot)
         -device qemu-xhci -device usb-tablet -vga std \
         -display none -vnc 127.0.0.1:7 -qmp unix:"$RUN/qmp.sock",server=on,wait=off \
         -daemonize -pidfile "$RUN/qemu.pid" \
+        -serial file:"$RUN/serial-$(date +%Y%m%d-%H%M).log" \
         -drive file="$HERE/system.qcow2",if=none,id=d0 -device ide-hd,drive=d0,bus=ide.1,bootindex=0 \
         -drive file="$HERE/build.qcow2",if=none,id=d1 -device ide-hd,drive=d1,bus=ide.2 \
         -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2244-:22 -device e1000,netdev=n0

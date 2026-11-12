@@ -88,6 +88,11 @@ git tree and syncs changes into the VM.
    `/build/out/build.log`). `scripts/watch.sh` on the host waits for the
    next failure.
 
+`haiku.sh` logs the VM's serial port to `run/serial-*.log`; with
+`serial_debug_output true` in Haiku's
+`~/config/settings/kernel/drivers/kernel`, kernel messages and the kernel
+debugger land there.
+
 Memory decides how many jobs Haiku can take: GCC needs 1–3 GB per Blink
 file. With a 10 GB VM, 4 jobs and no jumbo build is stable; more made Haiku
 page itself to a standstill.
