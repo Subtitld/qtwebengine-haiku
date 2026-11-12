@@ -103,6 +103,9 @@ keeps a 10 GB VM going:
   whose `cc1`/`cc1plus` run GCC with `--param ggc-min-expand=20
   --param ggc-min-heapsize=131072` (it collects garbage early); `build.sh`
   exports it. Compile commands stay the same, so nothing is rebuilt;
+- no BFS indexes on the build disk (`rmindex -d /build name`, `size`,
+  `last_modified`): they serve only file queries, cost a write per file,
+  and a damaged one made every write to the disk hang;
 - `scripts/memguard.py`, run in the VM, follows the kernel's low-resource
   state in the syslog and pauses the newest compiler while it is critical.
 
