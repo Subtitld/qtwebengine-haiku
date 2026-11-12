@@ -16,7 +16,7 @@ case "${1:-}" in
 boot)
     running && { echo "already running"; exit 1; }
     qemu-system-x86_64 -name haiku-build -machine q35 -accel kvm -cpu host \
-        -smp "${SMP:-8}" -m "${MEM:-10240}" \
+        -smp "${SMP:-8}" -m "${MEM:-8192}" \
         -device qemu-xhci -device usb-tablet -vga std \
         -display none -vnc 127.0.0.1:7 -qmp unix:"$RUN/qmp.sock",server=on,wait=off \
         -daemonize -pidfile "$RUN/qemu.pid" \
