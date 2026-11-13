@@ -13,7 +13,10 @@ transparent background and exits cleanly, with software compositing
 PySide6's `QtWebEngineCore` and `QtWebEngineWidgets` build against it too
 (see [Python](#python-pyside6)): `scripts/smoke-test.py` passes, and so does
 Subtitld's own renderer test (`tests/test_subtitle_renderer.py`, 62 checks),
-which drives its render helper process.
+which drives its render helper process. The whole of Subtitld runs on
+Haiku's desktop with them, its preview's subtitles drawn by this
+QtWebEngine while the video plays, using HaikuPorts' `pyside6_python3.14`
+with only the two WebEngine modules added beside it.
 
 The first goal is what [Subtitld](https://subtitld.org) needs: QtWebEngine
 Widgets rendering pages offscreen in software, with a transparent
