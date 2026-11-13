@@ -1,0 +1,31 @@
+From d74f9785830f4f11665fbc0cbb64bfd64fec7d42 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jbopen@gmail.com>
+Date: Fri, 13 Nov 2026 10:35:29 -0300
+Subject: [PATCH 1/2] Pass a Qt module's own include directories to shiboken
+
+A Qt module installed in another prefix than QtCore's (QtWebEngine
+built apart from Haiku's Qt package) has its headers outside QtCore's
+include directories, which were all shiboken was given.
+---
+ sources/pyside6/cmake/Macros/PySideModules.cmake | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/sources/pyside6/cmake/Macros/PySideModules.cmake b/sources/pyside6/cmake/Macros/PySideModules.cmake
+index 1f8d841..b104b5f 100644
+--- a/sources/pyside6/cmake/Macros/PySideModules.cmake
++++ b/sources/pyside6/cmake/Macros/PySideModules.cmake
+@@ -126,6 +126,14 @@ macro(create_pyside_module)
+     if(module_ADDITIONAL_INCLUDE_DIRS)
+         list(APPEND shiboken_include_dir_list ${${module_ADDITIONAL_INCLUDE_DIRS}})
+     endif()
++    # The Qt module's own include directories: one installed in another prefix
++    # (QtWebEngine on Haiku) is not under QtCore's.
++    string(REGEX REPLACE "^Qt" "" qt_module_name "${module_NAME}")
++    if(TARGET Qt${QT_MAJOR_VERSION}::${qt_module_name})
++        get_target_property(qt_module_includes Qt${QT_MAJOR_VERSION}::${qt_module_name}
++                            INTERFACE_INCLUDE_DIRECTORIES)
++        list(APPEND shiboken_include_dir_list ${qt_module_includes})
++    endif()
+ 
+     # Remove duplicates and transform the path separators into something
+     # shiboken understands.

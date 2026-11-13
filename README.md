@@ -8,8 +8,12 @@ Status: **work in progress**. The whole module builds on Haiku
 and `scripts/smoke-test.cpp` passes: a `QWebEngineView` on the offscreen
 platform loads a page, runs JavaScript, grabs it to an image with a
 transparent background and exits cleanly, with software compositing
-(`--disable-gpu --no-sandbox`). GPU rasterisation does not work yet, and
-there are no Python (PySide6) bindings for it yet.
+(`--disable-gpu --no-sandbox`). GPU rasterisation does not work yet.
+
+PySide6's `QtWebEngineCore` and `QtWebEngineWidgets` build against it too
+(see [Python](#python-pyside6)): `scripts/smoke-test.py` passes, and so does
+Subtitld's own renderer test (`tests/test_subtitle_renderer.py`, 62 checks),
+which drives its render helper process.
 
 The first goal is what [Subtitld](https://subtitld.org) needs: QtWebEngine
 Widgets rendering pages offscreen in software, with a transparent
@@ -66,6 +70,9 @@ Abseil, Skia, Dawn, WebRTC).
   which left Blink with an empty default stylesheet).
   `scripts/hostcheck.sh` relinks each tool and keeps the new copy only
   where it differs.
+- `pkgman` downloads can stall for good on large packages; downloading the
+  `.hpkg` files elsewhere and passing their paths to `pkgman install`
+  works.
 
 ## Known limitations
 
@@ -99,6 +106,30 @@ git tree and syncs changes into the VM.
 4. In the VM: `/build/configure.sh`, then `/build/build.sh` (log in
    `/build/out/build.log`). `scripts/watch.sh` on the host waits for the
    next failure.
+
+5. `cmake --install /build/out` puts the module in `/build/install`, a
+   prefix of its own beside Haiku's Qt.
+
+## Python (PySide6)
+
+HaikuPorts' `pyside6_python3.14` is PySide6 6.10.3 without the WebEngine
+modules. `scripts/pyside-build.sh` builds the same release in the VM, with
+HaikuPorts' patchset for it and the two patches in `patches/pyside/`, for
+the modules QtWebEngineWidgets needs, against `/build/install`:
+
+- shiboken was given only QtCore's include directories, which on Haiku do
+  not hold QtWebEngine's headers; the module's own are added;
+- the extension classes are dropped when QtWebEngine has no
+  `webengine_extensions` feature (as QtNetwork drops its SSL classes).
+
+The script also points shiboken at clang's builtin headers
+(`llvm-config --libdir` names `develop/lib`, they are in `lib/clang/21`)
+and sets a full `LIBRARY_PATH`, which the `.pyi` step passes on to Python.
+It needs `llvm21_openmp` installed besides clang: clang's CMake files
+check that `libomp` is there. The two WebEngine modules are 6.10.3 with
+the limited API, like the package's, so they can be packaged to sit beside
+it. `scripts/run-python.sh` runs Python with the built package and the
+paths QtWebEngine needs.
 
 `haiku.sh` logs the VM's serial port to `run/serial-*.log`; with
 `serial_debug_output true` in Haiku's
@@ -134,5 +165,5 @@ keeps a 10 GB VM going:
 ## Licence
 
 The patches here are under the licences of the files they change (Qt's
-LGPL/GPL for QtWebEngine, BSD for Chromium). The scripts are under the
+LGPL/GPL for QtWebEngine and PySide6, BSD for Chromium). The scripts are under the
 BSD 3-clause licence (`scripts/LICENSE`).
