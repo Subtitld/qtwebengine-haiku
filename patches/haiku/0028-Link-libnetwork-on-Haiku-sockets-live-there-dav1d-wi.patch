@@ -1,0 +1,37 @@
+From f151acb2e5532687e18d162cce441c262b1d24f3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Fri, 13 Nov 2026 03:07:15 -0300
+Subject: [PATCH 28/29] Link libnetwork on Haiku (sockets live there); dav1d
+ without thread affinity
+
+---
+ src/3rdparty/chromium/base/BUILD.gn              | 1 +
+ src/3rdparty/chromium/third_party/dav1d/BUILD.gn | 3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/base/BUILD.gn b/src/3rdparty/chromium/base/BUILD.gn
+index 73cf56a..1d65644 100644
+--- a/src/3rdparty/chromium/base/BUILD.gn
++++ b/src/3rdparty/chromium/base/BUILD.gn
+@@ -2185,6 +2185,7 @@ jumbo_component("base") {
+     libs += [
+       "bsd",
+       "execinfo",
++      "network",
+     ]
+   } else if (is_freebsd) {
+     sources += [
+diff --git a/src/3rdparty/chromium/third_party/dav1d/BUILD.gn b/src/3rdparty/chromium/third_party/dav1d/BUILD.gn
+index 22a80ef..0623011 100644
+--- a/src/3rdparty/chromium/third_party/dav1d/BUILD.gn
++++ b/src/3rdparty/chromium/third_party/dav1d/BUILD.gn
+@@ -57,7 +57,8 @@ config("public_dav1d_config") {
+     defines = [ "CONFIG_LOG=1" ]
+   }
+ 
+-  if (!is_android && !is_apple && !is_win) {
++  # Haiku has no thread affinity.
++  if (!is_android && !is_apple && !is_win && !is_haiku) {
+     defines += [
+       "HAVE_PTHREAD_GETAFFINITY_NP=1",
+       "HAVE_PTHREAD_SETAFFINITY_NP=1",

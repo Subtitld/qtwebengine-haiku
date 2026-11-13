@@ -1,7 +1,7 @@
 From 2d66b8bb69dd460ad0456d0526ff34226596149a Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 04:05:37 -0300
-Subject: [PATCH 21/24] Haiku: media without V4L2 or first-DTS, audio backend
+Subject: [PATCH 21/29] Haiku: media without V4L2 or first-DTS, audio backend
  default
 
 No camera on Haiku: the V4L2 sources stay out and the platform factory

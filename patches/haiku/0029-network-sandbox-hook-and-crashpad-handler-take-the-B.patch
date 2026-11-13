@@ -1,0 +1,37 @@
+From 912505672c77adfeb73e69de3a156fda4d4c8eba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Fri, 13 Nov 2026 03:31:57 -0300
+Subject: [PATCH 29/29] network sandbox hook and crashpad handler take the BSD
+ branch on Haiku
+
+---
+ .../components/crash/core/app/chrome_crashpad_handler.cc        | 2 +-
+ .../chromium/services/network/network_sandbox_hook_linux.h      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/3rdparty/chromium/components/crash/core/app/chrome_crashpad_handler.cc b/src/3rdparty/chromium/components/crash/core/app/chrome_crashpad_handler.cc
+index 9aa752e..d5e39bc 100644
+--- a/src/3rdparty/chromium/components/crash/core/app/chrome_crashpad_handler.cc
++++ b/src/3rdparty/chromium/components/crash/core/app/chrome_crashpad_handler.cc
+@@ -6,7 +6,7 @@
+ extern "C" int CrashpadHandlerMain(int argc, char* argv[]);
+ 
+ int main(int argc, char* argv[]) {
+-#if defined(__OpenBSD__) || defined(__FreeBSD__)
++#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__HAIKU__)
+   return -1;
+ #else
+   return CrashpadHandlerMain(argc, argv);
+diff --git a/src/3rdparty/chromium/services/network/network_sandbox_hook_linux.h b/src/3rdparty/chromium/services/network/network_sandbox_hook_linux.h
+index 9d39bb7..3e60dd5 100644
+--- a/src/3rdparty/chromium/services/network/network_sandbox_hook_linux.h
++++ b/src/3rdparty/chromium/services/network/network_sandbox_hook_linux.h
+@@ -6,7 +6,7 @@
+ #define SERVICES_NETWORK_NETWORK_SANDBOX_HOOK_LINUX_H_
+ 
+ #include "base/component_export.h"
+-#if defined(__OpenBSD__) || defined(__FreeBSD__)
++#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__HAIKU__)
+ #include "sandbox/policy/sandbox.h"
+ #else
+ #include "sandbox/policy/linux/sandbox_linux.h"

@@ -1,7 +1,7 @@
 From 169bc939bd03ee722cb508730a614536a7645ad0 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 02:42:01 -0300
-Subject: [PATCH 15/24] Haiku: Blink and ANGLE thread stacks/names, memory
+Subject: [PATCH 15/29] Haiku: Blink and ANGLE thread stacks/names, memory
  instrumentation
 
 Blink's stack size and start (used to scan the stack for GC) come from

@@ -1,0 +1,35 @@
+From 0253358d490b82da40d66259b6a22d2bd12b1476 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Fri, 13 Nov 2026 01:38:42 -0300
+Subject: [PATCH 27/29] content: the file system access watcher is the stub on
+ Haiku (no EVFILT_VNODE)
+
+---
+ src/3rdparty/chromium/content/browser/BUILD.gn | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/3rdparty/chromium/content/browser/BUILD.gn b/src/3rdparty/chromium/content/browser/BUILD.gn
+index 906df00..ec35c7a 100644
+--- a/src/3rdparty/chromium/content/browser/BUILD.gn
++++ b/src/3rdparty/chromium/content/browser/BUILD.gn
+@@ -2529,7 +2529,8 @@ jumbo_source_set("browser") {
+     ]
+   }
+ 
+-  if (is_bsd) {
++  # Haiku's kqueue has no EVFILT_VNODE: it keeps the stub.
++  if (is_bsd && !is_haiku) {
+     sources += [
+       "file_system_access/file_path_watcher/file_path_watcher_bsd.cc",
+       "file_system_access/file_path_watcher/file_path_watcher_kqueue.cc",
+@@ -2592,6 +2593,10 @@ jumbo_source_set("browser") {
+       "sandbox_ipc_linux.h",
+     ]
+   }
++  if (is_haiku) {
++    sources +=
++        [ "file_system_access/file_path_watcher/file_path_watcher_stub.cc" ]
++  }
+ 
+   if (is_chromeos) {
+     sources += [

@@ -1,7 +1,7 @@
 From 8c9d6409f460a5eef21196a8ec1eda1ecfb9c162 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 22:39:45 -0300
-Subject: [PATCH 05/24] Haiku: Skia, the Vulkan loader and libdrm
+Subject: [PATCH 05/29] Haiku: Skia, the Vulkan loader and libdrm
 
 Haiku's GCC defines no __unix__, so Skia did not pick SK_BUILD_FOR_UNIX
 and fell through to the Mac code. The Vulkan loader counts Haiku as a

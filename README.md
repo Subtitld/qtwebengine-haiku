@@ -3,10 +3,12 @@
 A port of **QtWebEngine 6.10.3** (Chromium 134) to Haiku x86_64, built from
 source with Haiku's GCC 13.
 
-Status: **work in progress**. The source configures and GN generates on
-Haiku; Chromium compiles through V8 and most of the base, network and media
-layers, and Chromium's own build tools run on Haiku. Nothing has been
-linked or run yet.
+Status: **work in progress**. The whole module builds on Haiku
+(`libQt6WebEngineCore`, `libQt6WebEngineWidgets`, `QtWebEngineProcess`),
+and a `QWebEngineView` loads a page, runs JavaScript and grabs to an image
+with software compositing (`--disable-gpu --no-sandbox`). Not right yet:
+Blink's default stylesheet comes out empty (every element is inline), GPU
+rasterisation fails, and the application hangs on exit.
 
 The first goal is what [Subtitld](https://subtitld.org) needs: QtWebEngine
 Widgets rendering pages offscreen in software, with a transparent
