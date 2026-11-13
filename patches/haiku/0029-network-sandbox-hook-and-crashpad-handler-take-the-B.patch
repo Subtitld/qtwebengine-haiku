@@ -1,7 +1,7 @@
 From 912505672c77adfeb73e69de3a156fda4d4c8eba Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Fri, 13 Nov 2026 03:31:57 -0300
-Subject: [PATCH 29/29] network sandbox hook and crashpad handler take the BSD
+Subject: [PATCH 29/31] network sandbox hook and crashpad handler take the BSD
  branch on Haiku
 
 ---

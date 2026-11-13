@@ -1,7 +1,7 @@
 From a8873dc18d58f3d21229da1af5ccf4f1d8f39ebb Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 23:21:22 -0300
-Subject: [PATCH 06/29] Haiku: V8 platform, Dawn, ANGLE, libsync, pkg-config
+Subject: [PATCH 06/31] Haiku: V8 platform, Dawn, ANGLE, libsync, pkg-config
 
 V8 gets V8_OS_HAIKU (POSIX, no target OS define, so none of the Linux
 signal/trap-handler code) and platform-haiku.cc, carried forward from

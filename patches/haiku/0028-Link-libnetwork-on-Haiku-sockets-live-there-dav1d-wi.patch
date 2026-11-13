@@ -1,7 +1,7 @@
 From f151acb2e5532687e18d162cce441c262b1d24f3 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Fri, 13 Nov 2026 03:07:15 -0300
-Subject: [PATCH 28/29] Link libnetwork on Haiku (sockets live there); dav1d
+Subject: [PATCH 28/31] Link libnetwork on Haiku (sockets live there); dav1d
  without thread affinity
 
 ---

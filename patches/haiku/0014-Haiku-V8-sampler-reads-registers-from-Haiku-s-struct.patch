@@ -1,7 +1,7 @@
 From 006e652a76b4ef23bb734ade7da1afc370324c35 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 02:29:03 -0300
-Subject: [PATCH 14/29] Haiku: V8 sampler reads registers from Haiku's struct
+Subject: [PATCH 14/31] Haiku: V8 sampler reads registers from Haiku's struct
  vregs
 
 ---

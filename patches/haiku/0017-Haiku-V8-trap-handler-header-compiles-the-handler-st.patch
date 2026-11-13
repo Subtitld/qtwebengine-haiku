@@ -1,7 +1,7 @@
 From 6536fb46219f84e65de6281f6b72415b09a1977c Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 02:58:21 -0300
-Subject: [PATCH 17/29] Haiku: V8 trap handler header compiles (the handler
+Subject: [PATCH 17/31] Haiku: V8 trap handler header compiles (the handler
  stays off)
 
 ---

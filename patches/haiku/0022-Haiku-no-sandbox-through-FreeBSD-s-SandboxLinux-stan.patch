@@ -1,7 +1,7 @@
 From 0053dfff98b1a0bbfa63cd07a878894566554305 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 04:25:30 -0300
-Subject: [PATCH 22/29] Haiku: no sandbox, through FreeBSD's SandboxLinux
+Subject: [PATCH 22/31] Haiku: no sandbox, through FreeBSD's SandboxLinux
  stand-in
 
 sandbox/policy builds freebsd/sandbox_freebsd.cc on Haiku too (without

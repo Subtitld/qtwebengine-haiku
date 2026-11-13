@@ -1,0 +1,66 @@
+From 99d2fe412a29bc6ae8f384ce5d44cf322f295e1e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
+Date: Fri, 13 Nov 2026 04:25:23 -0300
+Subject: [PATCH 30/31] Haiku default fonts by name when Qt's platform has no
+ style-hint families (offscreen)
+
+---
+ src/core/web_engine_settings.cpp | 34 ++++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/src/core/web_engine_settings.cpp b/src/core/web_engine_settings.cpp
+index a6147af..5566440 100644
+--- a/src/core/web_engine_settings.cpp
++++ b/src/core/web_engine_settings.cpp
+@@ -25,10 +25,29 @@
+ #include <QFont>
+ #include <QTimer>
+ 
++#if defined(Q_OS_HAIKU)
++#include <QFontDatabase>
++#endif
++
+ using namespace Qt::StringLiterals;
+ 
+ namespace QtWebEngineCore {
+ 
++#if defined(Q_OS_HAIKU)
++// Qt's offscreen platform on Haiku answers every style hint with the same
++// family, and Haiku's fontconfig has no aliases for its Noto fonts: take the
++// first installed of the families Haiku's own platform plugin would give.
++static QString haikuFamily(std::initializer_list<const char *> candidates, const QString &fallback)
++{
++    for (const char *candidate : candidates) {
++        const QString family = QString::fromLatin1(candidate);
++        if (QFontDatabase::hasFamily(family))
++            return family;
++    }
++    return fallback;
++}
++#endif
++
+ QHash<QWebEngineSettings::WebAttribute, bool> WebEngineSettings::s_defaultAttributes;
+ QHash<QWebEngineSettings::FontFamily, QString> WebEngineSettings::s_defaultFontFamilies;
+ QHash<QWebEngineSettings::FontSize, int> WebEngineSettings::s_defaultFontSizes;
+@@ -313,6 +332,21 @@ void WebEngineSettings::initDefaults()
+ 
+         defaultFont.setStyleHint(QFont::Monospace);
+         s_defaultFontFamilies.insert(QWebEngineSettings::FixedFont, defaultFont.defaultFamily());
++
++#if defined(Q_OS_HAIKU)
++        if (s_defaultFontFamilies.value(QWebEngineSettings::SansSerifFont)
++            == s_defaultFontFamilies.value(QWebEngineSettings::FixedFont)) {
++            const auto fill = [](QWebEngineSettings::FontFamily which,
++                                 std::initializer_list<const char *> candidates) {
++                s_defaultFontFamilies.insert(
++                        which, haikuFamily(candidates, s_defaultFontFamilies.value(which)));
++            };
++            fill(QWebEngineSettings::StandardFont, { "Noto Serif", "DejaVu Serif" });
++            fill(QWebEngineSettings::SerifFont, { "Noto Serif", "DejaVu Serif" });
++            fill(QWebEngineSettings::SansSerifFont, { "Noto Sans", "DejaVu Sans" });
++            fill(QWebEngineSettings::FixedFont, { "Noto Sans Mono", "DejaVu Sans Mono" });
++        }
++#endif
+     }
+ 
+     if (s_defaultFontSizes.isEmpty()) {

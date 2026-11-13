@@ -1,7 +1,7 @@
 From 2506c22853f2cd06fb14e15d1622c8353e1db80d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 22:21:49 -0300
-Subject: [PATCH 02/29] Haiku: gn gen passes; first build fixes
+Subject: [PATCH 02/31] Haiku: gn gen passes; first build fixes
 
 nasm: no /usr/include/string.h to probe (and no mempcpy).
 devtools-frontend: Node lists no CPUs on Haiku, so terser got no workers

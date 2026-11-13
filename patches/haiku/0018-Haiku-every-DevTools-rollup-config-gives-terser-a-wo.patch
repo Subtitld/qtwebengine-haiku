@@ -1,7 +1,7 @@
 From ccbad9ac38cda049e291a2cc0489381c8b7af3d2 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 03:25:53 -0300
-Subject: [PATCH 18/29] Haiku: every DevTools rollup config gives terser a
+Subject: [PATCH 18/31] Haiku: every DevTools rollup config gives terser a
  worker count
 
 ---

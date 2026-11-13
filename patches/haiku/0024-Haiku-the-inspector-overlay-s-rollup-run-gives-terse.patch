@@ -1,7 +1,7 @@
 From 6d29bff9cb1c6bde0c88c64f9f613fd4e0ff81cb Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 04:54:13 -0300
-Subject: [PATCH 24/29] Haiku: the inspector overlay's rollup run gives terser
+Subject: [PATCH 24/31] Haiku: the inspector overlay's rollup run gives terser
  a worker count
 
 ---

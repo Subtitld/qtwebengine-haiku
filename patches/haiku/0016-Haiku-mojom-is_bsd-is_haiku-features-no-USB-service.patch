@@ -1,7 +1,7 @@
 From 35295c94bd823e85bdcb8f12ece2479d513a6108 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 02:46:00 -0300
-Subject: [PATCH 16/29] Haiku: mojom is_bsd/is_haiku features, no USB service
+Subject: [PATCH 16/31] Haiku: mojom is_bsd/is_haiku features, no USB service
 
 Mojom enables is_bsd for Haiku so generated bindings match the C++ side,
 which treats Haiku as BSD. The device service has no USB backend on

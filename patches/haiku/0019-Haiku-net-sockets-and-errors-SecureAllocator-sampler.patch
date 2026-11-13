@@ -1,7 +1,7 @@
 From 32384b850a19bdaa2295243e1598052cc35e379a Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 03:38:56 -0300
-Subject: [PATCH 19/29] Haiku: net/ sockets and errors, SecureAllocator ==,
+Subject: [PATCH 19/31] Haiku: net/ sockets and errors, SecureAllocator ==,
  sampler include
 
 UDP multicast uses an ip_mreqn laid out like Haiku's ip_mreq (no interface

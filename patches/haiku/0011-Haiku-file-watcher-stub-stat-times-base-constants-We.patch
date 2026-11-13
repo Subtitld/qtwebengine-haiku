@@ -1,7 +1,7 @@
 From 2ae2a305f546b4f78fca65355a48f88fa85499b7 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Thu, 12 Nov 2026 00:48:35 -0300
-Subject: [PATCH 11/29] Haiku: file watcher stub, stat times, base/ constants,
+Subject: [PATCH 11/31] Haiku: file watcher stub, stat times, base/ constants,
  WebRTC, nasm
 
 No EVFILT_VNODE on Haiku, so FilePathWatcher is the stub. File times come

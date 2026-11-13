@@ -1,7 +1,7 @@
 From cd9b558c8e338e5650b120f58175cd40392f392b Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 23:54:58 -0300
-Subject: [PATCH 08/29] Haiku: link executables without -pie
+Subject: [PATCH 08/31] Haiku: link executables without -pie
 
 Haiku's runtime_loader fails on the R_X86_64_TPOFF64 relocations a PIE
 gets for libstdc++'s std::__once_call/__once_callable (std::call_once):

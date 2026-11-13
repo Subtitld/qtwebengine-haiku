@@ -5,10 +5,11 @@ source with Haiku's GCC 13.
 
 Status: **work in progress**. The whole module builds on Haiku
 (`libQt6WebEngineCore`, `libQt6WebEngineWidgets`, `QtWebEngineProcess`),
-and a `QWebEngineView` loads a page, runs JavaScript and grabs to an image
-with software compositing (`--disable-gpu --no-sandbox`). Not right yet:
-Blink's default stylesheet comes out empty (every element is inline), GPU
-rasterisation fails, and the application hangs on exit.
+and `scripts/smoke-test.cpp` passes: a `QWebEngineView` on the offscreen
+platform loads a page, runs JavaScript, grabs it to an image with a
+transparent background and exits cleanly, with software compositing
+(`--disable-gpu --no-sandbox`). GPU rasterisation does not work yet, and
+there are no Python (PySide6) bindings for it yet.
 
 The first goal is what [Subtitld](https://subtitld.org) needs: QtWebEngine
 Widgets rendering pages offscreen in software, with a transparent
@@ -56,6 +57,15 @@ Abseil, Skia, Dawn, WebRTC).
   `get_next_image_info`).
 - Haiku's ninja can stop with "Error writing to build log: Interrupted
   system call"; it resumes cleanly, so `scripts/build.sh` restarts it.
+- `getifaddrs` lists interfaces without an address.
+- Qt's offscreen platform on Haiku gives the same family for every font
+  style hint, and Haiku's fontconfig has no aliases for its Noto fonts, so
+  the default web fonts are chosen by name there.
+- Powering the VM off mid-build can leave files damaged inside while they
+  still look valid. Here it broke six build tools (`brotli` among them,
+  which left Blink with an empty default stylesheet).
+  `scripts/hostcheck.sh` relinks each tool and keeps the new copy only
+  where it differs.
 
 ## Known limitations
 

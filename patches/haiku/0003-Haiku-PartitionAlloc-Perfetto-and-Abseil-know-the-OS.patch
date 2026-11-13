@@ -1,7 +1,7 @@
 From 1db12c3e30d59ad0b8f72e137c456b545771f4bc Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 22:31:41 -0300
-Subject: [PATCH 03/29] Haiku: PartitionAlloc, Perfetto and Abseil know the OS
+Subject: [PATCH 03/31] Haiku: PartitionAlloc, Perfetto and Abseil know the OS
 
 PartitionAlloc's own build_config.h gets PA_IS_HAIKU (counted as BSD and
 POSIX, like //build). Perfetto: no CLOCK_BOOTTIME or CLOCK_MONOTONIC_RAW,

@@ -1,7 +1,7 @@
 From 0925c2e7592e3443ac22868d176387692b2ab7bf Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jonat=C3=A3=20Bolzan=20Loss?= <jonata@jonata.org>
 Date: Wed, 11 Nov 2026 22:32:51 -0300
-Subject: [PATCH 04/29] Haiku: nasm finds endian.h where Haiku has it
+Subject: [PATCH 04/31] Haiku: nasm finds endian.h where Haiku has it
 
 ---
  .../chromium/third_party/nasm/config/config-linux.h       | 8 ++++++++
